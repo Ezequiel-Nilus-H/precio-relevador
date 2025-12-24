@@ -1,19 +1,57 @@
 import { useState, useEffect } from 'react';
-import { Save, DollarSign, X, Package } from 'lucide-react';
+import { Save, DollarSign, X, Package, History, ArrowLeft } from 'lucide-react';
 import { getSettings } from '../utils/storage';
 import { productOperationsAPI } from '../utils/api';
 
 const PriceEntryModal = ({ product, onSave, onClose }) => {
+  const [view, setView] = useState('form'); // 'form' o 'history'
   const [price, setPrice] = useState('');
   const [modalidad, setModalidad] = useState('Neto');
   const [cantidadMinima, setCantidadMinima] = useState('');
   const [saving, setSaving] = useState(false);
   const [settings, setSettings] = useState(null);
+  const [precios, setPrecios] = useState([]);
+  const [loadingPrecios, setLoadingPrecios] = useState(false);
 
   useEffect(() => {
     const savedSettings = getSettings();
     setSettings(savedSettings);
-  }, []);
+    // Cargar precios iniciales del producto
+    if (product && product.precios) {
+      setPrecios(product.precios);
+    }
+  }, [product]);
+
+  useEffect(() => {
+    // Cuando cambia a la vista de historial, cargar precios actualizados
+    if (view === 'history' && product) {
+      loadPrecios();
+    }
+  }, [view, product]);
+
+  const loadPrecios = async () => {
+    if (!product) return;
+    
+    try {
+      setLoadingPrecios(true);
+      // Usar los precios del producto si están disponibles, o hacer fetch
+      if (product.precios && product.precios.length > 0) {
+        setPrecios(product.precios);
+      } else {
+        // Si no hay precios en el producto, intentar obtenerlos
+        const ean = product.ean || (product.eans && product.eans[0]);
+        if (ean) {
+          // Por ahora usar los precios del producto directamente
+          setPrecios([]);
+        }
+      }
+    } catch (error) {
+      console.error('Error cargando precios:', error);
+      setPrecios([]);
+    } finally {
+      setLoadingPrecios(false);
+    }
+  };
 
   const modalidades = ['Bruto', 'Neto', 'Neto en cantidad'];
 
@@ -94,15 +132,36 @@ const PriceEntryModal = ({ product, onSave, onClose }) => {
       >
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2">
-            <Package size={24} />
-            Registrar Precio
+            {view === 'form' ? (
+              <>
+                <Package size={24} />
+                Registrar Precio
+              </>
+            ) : (
+              <>
+                <History size={24} />
+                Historial de Precios
+              </>
+            )}
           </h2>
-          <button
-            onClick={onClose}
-            className="text-gray-500 hover:text-gray-700"
-          >
-            <X size={24} />
-          </button>
+          <div className="flex items-center gap-2">
+            {view === 'history' && (
+              <button
+                onClick={() => setView('form')}
+                className="text-gray-600 hover:text-gray-800 flex items-center gap-1 text-sm"
+                title="Volver a cargar precio"
+              >
+                <ArrowLeft size={18} />
+                Volver
+              </button>
+            )}
+            <button
+              onClick={onClose}
+              className="text-gray-500 hover:text-gray-700"
+            >
+              <X size={24} />
+            </button>
+          </div>
         </div>
 
         {/* Información del producto */}
@@ -115,7 +174,7 @@ const PriceEntryModal = ({ product, onSave, onClose }) => {
         </div>
 
         {/* Información de settings */}
-        {settings && (
+        {settings && view === 'form' && (
           <div className="mb-4 p-3 bg-blue-50 rounded-lg">
             <p className="text-sm font-semibold text-blue-800 mb-1">
               Supermercado: <span className="font-normal">{settings.supermercado}</span>
@@ -138,7 +197,24 @@ const PriceEntryModal = ({ product, onSave, onClose }) => {
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        {/* Botón para cambiar de vista */}
+        {view === 'form' && (
+          <div className="mb-4 flex justify-end">
+            <button
+              type="button"
+              onClick={() => setView('history')}
+              className="flex items-center justify-center gap-1 px-3 py-1.5 border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-700 text-sm"
+              title="Ver precios guardados"
+            >
+              <History size={16} />
+              <span className="font-semibold">{precios.length}</span>
+            </button>
+          </div>
+        )}
+
+        {/* Vista de formulario */}
+        {view === 'form' && (
+          <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Modalidad
@@ -224,6 +300,117 @@ const PriceEntryModal = ({ product, onSave, onClose }) => {
             </p>
           )}
         </form>
+        )}
+
+        {/* Vista de historial de precios */}
+        {view === 'history' && (
+          <div className="space-y-4">
+            {loadingPrecios ? (
+              <div className="text-center py-8 text-gray-500">Cargando precios...</div>
+            ) : precios.length === 0 ? (
+              <div className="text-center py-8 text-gray-500">
+                <p>No hay precios registrados para este producto</p>
+              </div>
+            ) : (
+              <div className="space-y-2 max-h-[500px] overflow-y-auto">
+                {precios
+                  .sort((a, b) => {
+                    const fechaA = new Date(a.fecha);
+                    const fechaB = new Date(b.fecha);
+                    return fechaB - fechaA; // Más recientes primero
+                  })
+                  .map((precio, index) => {
+                    // Parsear la fecha manualmente para evitar problemas de zona horaria
+                    let fechaStr = '';
+                    let horaStr = '';
+                    
+                    // Si la fecha viene como string ISO, extraer directamente
+                    if (typeof precio.fecha === 'string') {
+                      if (precio.fecha.includes('T')) {
+                        const [fechaPart, horaPart] = precio.fecha.split('T');
+                        const [year, month, day] = fechaPart.split('-');
+                        fechaStr = `${day}/${month}/${year}`;
+                        
+                        if (horaPart) {
+                          const [hora, minutos] = horaPart.split(':');
+                          const horaNum = parseInt(hora);
+                          const minutosNum = parseInt(minutos);
+                          const esPM = horaNum >= 12;
+                          const hora12 = horaNum > 12 ? horaNum - 12 : (horaNum === 0 ? 12 : horaNum);
+                          horaStr = `${hora12.toString().padStart(2, '0')}:${minutosNum.toString().padStart(2, '0')} ${esPM ? 'p. m.' : 'a. m.'}`;
+                        }
+                      } else {
+                        // Si es solo fecha sin hora
+                        const [year, month, day] = precio.fecha.split('-');
+                        fechaStr = `${day}/${month}/${year}`;
+                      }
+                    } else {
+                      // Si viene como Date object
+                      const fecha = new Date(precio.fecha);
+                      const fechaISO = fecha.toISOString();
+                      const [fechaPart, horaPart] = fechaISO.split('T');
+                      const [year, month, day] = fechaPart.split('-');
+                      fechaStr = `${day}/${month}/${year}`;
+                      
+                      if (horaPart) {
+                        const [hora, minutos] = horaPart.split(':');
+                        const horaNum = parseInt(hora);
+                        const minutosNum = parseInt(minutos);
+                        const esPM = horaNum >= 12;
+                        const hora12 = horaNum > 12 ? horaNum - 12 : (horaNum === 0 ? 12 : horaNum);
+                        horaStr = `${hora12.toString().padStart(2, '0')}:${minutosNum.toString().padStart(2, '0')} ${esPM ? 'p. m.' : 'a. m.'}`;
+                      }
+                    }
+                    
+                    const fechaCompleta = horaStr ? `${fechaStr}, ${horaStr}` : fechaStr;
+                    
+                    return (
+                      <div
+                        key={index}
+                        className="p-4 border border-gray-200 rounded-lg hover:bg-gray-50"
+                      >
+                        <div className="flex justify-between items-start mb-2">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="font-semibold text-gray-800">
+                                ${precio.precio.toFixed(2)}
+                              </span>
+                              {precio.modalidad && (
+                                <span className="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded">
+                                  {precio.modalidad}
+                                </span>
+                              )}
+                              {precio.cantidadMinima && (
+                                <span className="text-xs px-2 py-1 bg-purple-100 text-purple-700 rounded">
+                                  Mín. {precio.cantidadMinima} unidades
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-sm text-gray-600">
+                              <span className="font-medium">Supermercado:</span> {precio.supermercado || 'N/A'}
+                            </p>
+                            <p className="text-xs text-gray-500">
+                              <span className="font-medium">Fecha:</span> {fechaCompleta}
+                            </p>
+                            {precio.relevador && (
+                              <p className="text-xs text-gray-500">
+                                <span className="font-medium">Relevador:</span> {precio.relevador}
+                              </p>
+                            )}
+                            {precio.fuente && (
+                              <p className="text-xs text-gray-400 mt-1">
+                                Fuente: {precio.fuente}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

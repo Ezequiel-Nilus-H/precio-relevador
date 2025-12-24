@@ -90,6 +90,8 @@ function App() {
     setSelectedSupermarket(null); // Reset para nuevo relevamiento
   };
 
+  const [refreshProductSearch, setRefreshProductSearch] = useState(0);
+
   const handleSelectProductFromSearch = (product) => {
     // Abrir modal para cargar precio
     console.log('Producto seleccionado:', product);
@@ -98,6 +100,8 @@ function App() {
 
   const handlePriceSavedFromModal = () => {
     setSelectedProductForPrice(null);
+    // Trigger refresh en ProductSearch
+    setRefreshProductSearch(prev => prev + 1);
   };
 
   const resetScanFlow = () => {
@@ -162,6 +166,7 @@ function App() {
         {view === 'search' && !showProductForm && !showPriceEntry && !showProductSearch && (
           <ProductSearch
             onSelectProduct={handleSelectProductFromSearch}
+            onPriceSaved={refreshProductSearch}
           />
         )}
 

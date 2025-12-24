@@ -83,7 +83,7 @@ app.get('/api/products/ean/:ean', async (req, res) => {
 // Buscar productos por categoría y subcategoría
 app.get('/api/products/by-category', async (req, res) => {
   try {
-    const { categoria, subcategoria } = req.query;
+    const { categoria, subcategoria, supermercado, fecha } = req.query;
     const database = await getDb();
     const collection = database.collection(COLLECTION_NAME);
     
@@ -96,6 +96,51 @@ app.get('/api/products/by-category', async (req, res) => {
     }
     
     const products = await collection.find(query).limit(100).toArray();
+    
+    // Si se proporciona supermercado y fecha, verificar si tienen precio
+    if (supermercado && fecha) {
+      // Parsear la fecha directamente desde el string YYYY-MM-DD sin conversión de zona horaria
+      // Si viene como "2025-12-24", usar ese string directamente
+      let fechaBuscadaStr = fecha;
+      if (fecha.includes('T')) {
+        // Si viene como ISO string, extraer solo la fecha
+        fechaBuscadaStr = fecha.split('T')[0];
+      }
+      const supermercadoBuscado = String(supermercado || '').trim().toLowerCase();
+      
+      console.log('Verificando precios - Supermercado buscado:', supermercadoBuscado, 'Fecha buscada:', fechaBuscadaStr, 'Fecha recibida:', fecha);
+      
+      const productsWithPriceInfo = products.map(product => {
+        const matchingPrices = (product.precios || []).filter(precio => {
+          const precioFecha = new Date(precio.fecha);
+          const precioSupermercado = String(precio.supermercado || '').trim().toLowerCase();
+          const precioFechaStr = precioFecha.toISOString().split('T')[0];
+          
+          const supermercadoMatch = precioSupermercado === supermercadoBuscado;
+          const fechaMatch = precioFechaStr === fechaBuscadaStr;
+          
+          if (product.nombre && product.nombre.includes('Amargo MAROLIO Citrus')) {
+            console.log(`  Precio: supermercado="${precioSupermercado}" (match: ${supermercadoMatch}), fecha="${precioFechaStr}" (match: ${fechaMatch})`);
+          }
+          
+          return supermercadoMatch && fechaMatch;
+        });
+        
+        const hasPrice = matchingPrices.length > 0;
+        
+        if (product.nombre && product.nombre.includes('Amargo MAROLIO Citrus')) {
+          console.log(`  Producto "${product.nombre}": ${matchingPrices.length} precios coincidentes, hasPrice=${hasPrice}`);
+        }
+        
+        return {
+          ...product,
+          hasPriceForSupermarket: hasPrice
+        };
+      });
+      
+      return res.json(productsWithPriceInfo);
+    }
+    
     res.json(products);
   } catch (error) {
     console.error('Error buscando por categoría:', error);
@@ -106,7 +151,7 @@ app.get('/api/products/by-category', async (req, res) => {
 // Buscar productos por marca
 app.get('/api/products/by-brand', async (req, res) => {
   try {
-    const { marca } = req.query;
+    const { marca, supermercado, fecha } = req.query;
     if (!marca) {
       return res.json([]);
     }
@@ -117,6 +162,50 @@ app.get('/api/products/by-brand', async (req, res) => {
     const products = await collection.find({
       marca: marca
     }).limit(100).toArray();
+    
+    // Si se proporciona supermercado y fecha, verificar si tienen precio
+    if (supermercado && fecha) {
+      // Parsear la fecha directamente desde el string YYYY-MM-DD sin conversión de zona horaria
+      // Si viene como "2025-12-24", usar ese string directamente
+      let fechaBuscadaStr = fecha;
+      if (fecha.includes('T')) {
+        // Si viene como ISO string, extraer solo la fecha
+        fechaBuscadaStr = fecha.split('T')[0];
+      }
+      const supermercadoBuscado = String(supermercado || '').trim().toLowerCase();
+      
+      console.log('Verificando precios - Supermercado buscado:', supermercadoBuscado, 'Fecha buscada:', fechaBuscadaStr, 'Fecha recibida:', fecha);
+      
+      const productsWithPriceInfo = products.map(product => {
+        const matchingPrices = (product.precios || []).filter(precio => {
+          const precioFecha = new Date(precio.fecha);
+          const precioSupermercado = String(precio.supermercado || '').trim().toLowerCase();
+          const precioFechaStr = precioFecha.toISOString().split('T')[0];
+          
+          const supermercadoMatch = precioSupermercado === supermercadoBuscado;
+          const fechaMatch = precioFechaStr === fechaBuscadaStr;
+          
+          if (product.nombre && product.nombre.includes('Amargo MAROLIO Citrus')) {
+            console.log(`  Precio: supermercado="${precioSupermercado}" (match: ${supermercadoMatch}), fecha="${precioFechaStr}" (match: ${fechaMatch})`);
+          }
+          
+          return supermercadoMatch && fechaMatch;
+        });
+        
+        const hasPrice = matchingPrices.length > 0;
+        
+        if (product.nombre && product.nombre.includes('Amargo MAROLIO Citrus')) {
+          console.log(`  Producto "${product.nombre}": ${matchingPrices.length} precios coincidentes, hasPrice=${hasPrice}`);
+        }
+        
+        return {
+          ...product,
+          hasPriceForSupermarket: hasPrice
+        };
+      });
+      
+      return res.json(productsWithPriceInfo);
+    }
     
     res.json(products);
   } catch (error) {
@@ -292,9 +381,10 @@ app.post('/api/metadata/regenerate', async (req, res) => {
 });
 
 // Buscar productos por nombre o EAN (búsqueda)
+// Buscar productos por nombre
 app.get('/api/products/search', async (req, res) => {
   try {
-    const { q } = req.query;
+    const { q, supermercado, fecha } = req.query;
     if (!q) {
       return res.json([]);
     }
@@ -312,6 +402,51 @@ app.get('/api/products/search', async (req, res) => {
     };
 
     const products = await collection.find(query).limit(50).toArray();
+    
+    // Si se proporciona supermercado y fecha, verificar si tienen precio
+    if (supermercado && fecha) {
+      // Parsear la fecha directamente desde el string YYYY-MM-DD sin conversión de zona horaria
+      // Si viene como "2025-12-24", usar ese string directamente
+      let fechaBuscadaStr = fecha;
+      if (fecha.includes('T')) {
+        // Si viene como ISO string, extraer solo la fecha
+        fechaBuscadaStr = fecha.split('T')[0];
+      }
+      const supermercadoBuscado = String(supermercado || '').trim().toLowerCase();
+      
+      console.log('Verificando precios - Supermercado buscado:', supermercadoBuscado, 'Fecha buscada:', fechaBuscadaStr, 'Fecha recibida:', fecha);
+      
+      const productsWithPriceInfo = products.map(product => {
+        const matchingPrices = (product.precios || []).filter(precio => {
+          const precioFecha = new Date(precio.fecha);
+          const precioSupermercado = String(precio.supermercado || '').trim().toLowerCase();
+          const precioFechaStr = precioFecha.toISOString().split('T')[0];
+          
+          const supermercadoMatch = precioSupermercado === supermercadoBuscado;
+          const fechaMatch = precioFechaStr === fechaBuscadaStr;
+          
+          if (product.nombre && product.nombre.includes('Amargo MAROLIO Citrus')) {
+            console.log(`  Precio: supermercado="${precioSupermercado}" (match: ${supermercadoMatch}), fecha="${precioFechaStr}" (match: ${fechaMatch})`);
+          }
+          
+          return supermercadoMatch && fechaMatch;
+        });
+        
+        const hasPrice = matchingPrices.length > 0;
+        
+        if (product.nombre && product.nombre.includes('Amargo MAROLIO Citrus')) {
+          console.log(`  Producto "${product.nombre}": ${matchingPrices.length} precios coincidentes, hasPrice=${hasPrice}`);
+        }
+        
+        return {
+          ...product,
+          hasPriceForSupermarket: hasPrice
+        };
+      });
+      
+      return res.json(productsWithPriceInfo);
+    }
+    
     res.json(products);
   } catch (error) {
     console.error('Error en búsqueda:', error);

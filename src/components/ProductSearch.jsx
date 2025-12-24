@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import { Search, Package, Filter, Tag, ArrowLeft } from 'lucide-react';
 import { productsAPI, metadataAPI } from '../utils/api';
+import { getSettings } from '../utils/storage';
 
-const ProductSearch = ({ onSelectProduct }) => {
+const ProductSearch = ({ onSelectProduct, onPriceSaved }) => {
   const [searchType, setSearchType] = useState('nombre'); // 'nombre', 'categoria', 'marca'
   const [searchTerm, setSearchTerm] = useState('');
   const [metadata, setMetadata] = useState({ categorias: [], categoriaSubcategorias: {}, marcas: [] });
@@ -12,10 +13,39 @@ const ProductSearch = ({ onSelectProduct }) => {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [settings, setSettings] = useState(null);
 
   useEffect(() => {
     loadMetadata();
+    loadSettings();
   }, []);
+
+  useEffect(() => {
+    // Refrescar la búsqueda cuando cambia onPriceSaved (trigger de refresh)
+    if (onPriceSaved !== undefined && onPriceSaved > 0) {
+      refreshCurrentSearch();
+    }
+  }, [onPriceSaved]);
+
+  const loadSettings = () => {
+    const savedSettings = getSettings();
+    setSettings(savedSettings);
+  };
+
+  const refreshCurrentSearch = () => {
+    // Recargar settings antes de refrescar
+    loadSettings();
+    // Pequeño delay para asegurar que settings se actualice
+    setTimeout(() => {
+      if (searchType === 'nombre' && searchTerm) {
+        searchByName(searchTerm);
+      } else if (searchType === 'categoria' && selectedCategoria) {
+        searchByCategory();
+      } else if (searchType === 'marca' && selectedMarca) {
+        searchByBrand();
+      }
+    }, 200);
+  };
 
   useEffect(() => {
     // Debounce para búsqueda por nombre
@@ -70,7 +100,16 @@ const ProductSearch = ({ onSelectProduct }) => {
     try {
       setLoading(true);
       setError(null);
-      const results = await productsAPI.search(query);
+      const params = new URLSearchParams({ q: query });
+      if (settings?.supermercado) params.append('supermercado', settings.supermercado);
+      if (settings?.fecha) params.append('fecha', settings.fecha);
+      
+      const url = `${import.meta.env.VITE_API_URL || 'http://localhost:3001/api'}/products/search?${params}`;
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error('Error al buscar productos');
+      }
+      const results = await response.json();
       setProducts(results);
     } catch (error) {
       console.error('Error buscando productos:', error);
@@ -88,6 +127,8 @@ const ProductSearch = ({ onSelectProduct }) => {
       const params = new URLSearchParams();
       if (selectedCategoria) params.append('categoria', selectedCategoria);
       if (selectedSubcategoria) params.append('subcategoria', selectedSubcategoria);
+      if (settings?.supermercado) params.append('supermercado', settings.supermercado);
+      if (settings?.fecha) params.append('fecha', settings.fecha);
       
       const url = `${import.meta.env.VITE_API_URL || 'http://localhost:3001/api'}/products/by-category?${params}`;
       const response = await fetch(url);
@@ -109,7 +150,12 @@ const ProductSearch = ({ onSelectProduct }) => {
     try {
       setLoading(true);
       setError(null);
-      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3001/api'}/products/by-brand?marca=${encodeURIComponent(selectedMarca)}`);
+      const params = new URLSearchParams({ marca: selectedMarca });
+      if (settings?.supermercado) params.append('supermercado', settings.supermercado);
+      if (settings?.fecha) params.append('fecha', settings.fecha);
+      
+      const url = `${import.meta.env.VITE_API_URL || 'http://localhost:3001/api'}/products/by-brand?${params}`;
+      const response = await fetch(url);
       if (!response.ok) {
         throw new Error('Error al buscar por marca');
       }
@@ -402,11 +448,16 @@ const ProductSearch = ({ onSelectProduct }) => {
             ) : (
               products.map((product) => {
                 const pricesCount = product.precios?.length || 0;
+                const hasPrice = product.hasPriceForSupermarket || false;
                 return (
                   <div
                     key={product._id || product.ean}
                     onClick={() => onSelectProduct(product)}
-                    className="p-4 border border-gray-200 rounded-lg hover:bg-blue-50 hover:border-blue-300 cursor-pointer transition-colors"
+                    className={`p-4 border rounded-lg cursor-pointer transition-colors ${
+                      hasPrice
+                        ? 'border-green-300 bg-green-50 hover:bg-green-100'
+                        : 'border-gray-200 hover:bg-blue-50 hover:border-blue-300'
+                    }`}
                   >
                     <div className="flex justify-between items-start">
                       <div className="flex-1">
@@ -420,8 +471,8 @@ const ProductSearch = ({ onSelectProduct }) => {
                         )}
                       </div>
                       <div className="text-right">
-                        <div className="text-sm font-semibold text-blue-600">
-                          {pricesCount} precio{pricesCount !== 1 ? 's' : ''}
+                        <div className={`text-sm font-semibold ${hasPrice ? 'text-green-600' : 'text-blue-600'}`}>
+                          {hasPrice ? '✓ Precio registrado' : `${pricesCount} precio${pricesCount !== 1 ? 's' : ''}`}
                         </div>
                       </div>
                     </div>
@@ -437,4 +488,3 @@ const ProductSearch = ({ onSelectProduct }) => {
 };
 
 export default ProductSearch;
-
