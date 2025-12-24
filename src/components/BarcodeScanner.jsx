@@ -1,18 +1,27 @@
 import { useEffect, useRef, useState } from 'react';
-import { Html5Qrcode } from 'html5-qrcode';
-import { X, Camera, AlertCircle } from 'lucide-react';
+import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
+import { X, Camera, AlertCircle, Store, Calendar } from 'lucide-react';
+import { getSettings } from '../utils/storage';
 
-const BarcodeScanner = ({ onScan, onClose }) => {
+const BarcodeScanner = ({ onScan, onClose, selectedSupermarket, autoStart = false }) => {
   const [isScanning, setIsScanning] = useState(false);
   const [error, setError] = useState(null);
   const [isRequestingPermission, setIsRequestingPermission] = useState(false);
   const scannerRef = useRef(null);
   const html5QrCodeRef = useRef(null);
+  const hasAutoStarted = useRef(false);
 
   useEffect(() => {
     // Verificar compatibilidad del navegador al montar
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       setError('⚠️ Tu navegador no soporta el acceso a la cámara.\n\nPor favor, usa un navegador moderno como Chrome, Firefox, Safari o Edge.');
+    } else if (autoStart && !hasAutoStarted.current) {
+      // Iniciar automáticamente si autoStart está activo
+      hasAutoStarted.current = true;
+      // Pequeño delay para asegurar que el DOM esté listo
+      setTimeout(() => {
+        startScanning();
+      }, 100);
     }
     
     return () => {
@@ -20,14 +29,20 @@ const BarcodeScanner = ({ onScan, onClose }) => {
         html5QrCodeRef.current.stop().catch(() => {});
       }
     };
-  }, []);
+  }, [autoStart]);
 
   const getCameraConfigs = () => {
-    // En macOS, intentar primero sin restricciones, luego con facingMode
+    // Configuraciones optimizadas para iPhone 14 Pro y dispositivos con múltiples cámaras
+    // El autofocus se configurará directamente en el stream después de iniciar
     return [
-      true, // Primero intentar sin restricciones (para desktop/macOS)
-      { facingMode: "user" }, // Cámara frontal
-      { facingMode: "environment" }, // Cámara trasera (si hay)
+      // Configuración principal: cámara trasera (mejor para códigos de barras)
+      { facingMode: "environment" },
+      // Configuración alternativa: forzar cámara trasera
+      { facingMode: { exact: "environment" } },
+      // Sin restricciones (para desktop/macOS)
+      true,
+      // Cámara frontal como último recurso
+      { facingMode: "user" }
     ];
   };
 
@@ -75,33 +90,124 @@ const BarcodeScanner = ({ onScan, onClose }) => {
       // Intentar con diferentes configuraciones de cámara
       for (const config of cameraConfigs) {
         try {
-          // Configuración más simple para macOS/desktop
+          // Configuración ultra-optimizada para máxima velocidad de reconocimiento
           const scanConfig = {
-            fps: 10,
+            fps: 15,
             qrbox: function(viewfinderWidth, viewfinderHeight) {
-              // Calcular tamaño del cuadro de escaneo (60% del viewfinder)
-              const minEdgePercentage = 0.6;
-              const minEdgeSize = Math.min(viewfinderWidth, viewfinderHeight);
-              const qrboxSize = Math.floor(minEdgeSize * minEdgePercentage);
+              // Área de escaneo mínima pero efectiva: menos píxeles = procesamiento ultra-rápido
+              // Rectángulo horizontal perfecto para códigos de barras
+              // Si el código está claro y nítido, un área más pequeña es suficiente y más rápida
+              const widthPercentage = 0.9; // 90% del ancho para asegurar captura completa
+              const heightPercentage = 0.25; // Solo 25% del alto (mínimo necesario para códigos de barras)
               return {
-                width: qrboxSize,
-                height: qrboxSize
+                width: Math.floor(viewfinderWidth * widthPercentage),
+                height: Math.floor(viewfinderHeight * heightPercentage)
               };
             },
-            aspectRatio: 1.0,
+            // no aspectRatio
+            // Solo buscar códigos de barras lineales más comunes (menos formatos = más rápido)
+            // Priorizar EAN_13 que es el más común en productos de supermercado
+            formatsToSupport: [
+              Html5QrcodeSupportedFormats.EAN_13, // El más común en productos
+              Html5QrcodeSupportedFormats.EAN_8,
+              Html5QrcodeSupportedFormats.UPC_A,
+              Html5QrcodeSupportedFormats.UPC_E,
+              Html5QrcodeSupportedFormats.CODE_128,
+              Html5QrcodeSupportedFormats.CODE_39
+            ],
+            // CRÍTICO: Usar el decodificador nativo del navegador (BarcodeDetector API)
+            // Esto es MUCHO más rápido que el decodificador JavaScript (hasta 10x más rápido)
+            useBarCodeDetectorIfSupported: true,
+            // Recordar la última cámara usada para iniciar más rápido
+            rememberLastUsedCamera: true,
+            // Configuración adicional para mejor rendimiento
+            verbose: false // Deshabilitar logs para mejor rendimiento
           };
 
+          // Verificar si el navegador soporta BarcodeDetector API (mucho más rápido)
+          const hasBarcodeDetector = 'BarcodeDetector' in window;
+          if (hasBarcodeDetector) {
+            console.log('✅ BarcodeDetector API disponible - usando decodificador nativo ultra-rápido');
+          } else {
+            console.log('⚠️ BarcodeDetector API no disponible - usando decodificador JavaScript (más lento)');
+          }
+
+          // Usar la configuración de cámara tal cual
+          // El autofocus se configurará directamente en el stream después de iniciar
+          const cameraConfig = config === true ? undefined : config;
+
+          // Usar la configuración de cámara con autofocus habilitado
           await html5QrCode.start(
-            config === true ? undefined : config, // Si es true, usar undefined (sin restricciones)
+            cameraConfig,
             scanConfig,
-            (decodedText) => {
+            (decodedText, decodedResult) => {
+              // Callback optimizado para respuesta inmediata
+              // No hacer ninguna operación pesada aquí, solo pasar el resultado
               onScan(decodedText);
               stopScanning();
             },
             (errorMessage) => {
-              // Ignorar errores de escaneo continuo
+              // Ignorar errores de escaneo continuo (no hacer nada para no ralentizar)
             }
           );
+
+          // Configurar autofocus directamente en el stream de video
+          // Esto es especialmente importante para iPhone 14 Pro y iOS/Safari
+          // Esperar un poco para que el video esté completamente inicializado
+          setTimeout(() => {
+            try {
+              // Obtener el elemento de video que html5-qrcode crea
+              const videoElement = document.querySelector('#reader video');
+              if (videoElement && videoElement.srcObject) {
+                const stream = videoElement.srcObject;
+                const videoTrack = stream.getVideoTracks()[0];
+                
+                if (videoTrack && typeof videoTrack.getCapabilities === 'function') {
+                  const capabilities = videoTrack.getCapabilities();
+                  
+                  // Verificar si el dispositivo soporta focusMode
+                  if (capabilities.focusMode && Array.isArray(capabilities.focusMode)) {
+                    // Priorizar 'continuous' para autofocus continuo (mejor para distancias cercanas)
+                    const focusMode = capabilities.focusMode.includes('continuous') 
+                      ? 'continuous' 
+                      : capabilities.focusMode.includes('single-shot')
+                      ? 'single-shot'
+                      : null;
+                    
+                    if (focusMode) {
+                      // Configurar autofocus
+                      videoTrack.applyConstraints({
+                        advanced: [{ focusMode: focusMode }]
+                      }).then(() => {
+                        console.log(`✅ Autofocus configurado: ${focusMode}`);
+                      }).catch((err) => {
+                        console.log('⚠️ No se pudo configurar autofocus:', err.message);
+                      });
+                    }
+                  }
+                  
+                  // Configurar exposición continua también para mejor calidad
+                  if (capabilities.exposureMode && Array.isArray(capabilities.exposureMode)) {
+                    if (capabilities.exposureMode.includes('continuous')) {
+                      videoTrack.applyConstraints({
+                        advanced: [{ exposureMode: 'continuous' }]
+                      }).catch(() => {
+                        // Ignorar errores de exposición
+                      });
+                    }
+                  }
+                  
+                  // Para iPhone 14 Pro: intentar configurar distancia focal para enfoque cercano
+                  if (capabilities.zoom && capabilities.zoom.max > 1) {
+                    // No aplicar zoom automático, pero el dispositivo puede ajustar automáticamente
+                  }
+                }
+              }
+            } catch (focusError) {
+              console.log('⚠️ Error al configurar autofocus:', focusError.message);
+              // No fallar si no se puede configurar autofocus, continuar de todas formas
+            }
+          }, 500); // Esperar 500ms para que el video esté listo
 
           setIsScanning(true);
           setIsRequestingPermission(false);
@@ -189,6 +295,8 @@ const BarcodeScanner = ({ onScan, onClose }) => {
     onClose();
   };
 
+  const settings = getSettings();
+  
   return (
     <div className="fixed inset-0 bg-black bg-opacity-75 z-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
@@ -202,7 +310,31 @@ const BarcodeScanner = ({ onScan, onClose }) => {
           </button>
         </div>
 
-        <div id="reader" className="w-full mb-4 rounded-lg overflow-hidden bg-gray-100 [&_video]:scale-x-[-1]"></div>
+        {(selectedSupermarket || settings.supermercado) && settings.fecha && (
+          <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+            <p className="text-sm font-semibold text-blue-800 mb-2">Información del relevamiento:</p>
+            <div className="space-y-1 text-xs text-blue-700">
+              <p className="flex items-center gap-2">
+                <Store size={14} />
+                <span>Supermercado: <span className="font-semibold">{selectedSupermarket || settings.supermercado}</span></span>
+              </p>
+              <p className="flex items-center gap-2">
+                <Calendar size={14} />
+                <span>Fecha: <span className="font-semibold">{new Date(settings.fecha).toLocaleDateString()}</span></span>
+              </p>
+            </div>
+          </div>
+        )}
+
+        <div id="reader" className="w-full mb-4 rounded-lg overflow-hidden bg-gray-100" style={{ transform: 'scaleX(-1)' }}>
+          <style>{`
+            #reader video {
+              transform: scaleX(-1) !important;
+              width: 100% !important;
+              height: auto !important;
+            }
+          `}</style>
+        </div>
 
         {error && (
           <div className="mb-4 p-3 bg-red-50 border border-red-300 text-red-800 rounded-lg text-sm">

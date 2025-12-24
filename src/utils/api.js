@@ -1,4 +1,5 @@
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
+// Usar ruta relativa para que pase por el proxy de Vite (HTTPS -> HTTP)
+const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
 
 // Función helper para hacer requests
 async function fetchAPI(endpoint, options = {}) {

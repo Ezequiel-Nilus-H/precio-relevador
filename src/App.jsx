@@ -32,6 +32,14 @@ function App() {
       alert('Por favor selecciona un supermercado primero');
       return;
     }
+    
+    // Validar que la fecha de ajustes esté configurada
+    const settings = getSettings();
+    if (!settings.fecha) {
+      alert('Por favor configura la fecha en Ajustes antes de escanear');
+      return;
+    }
+    
     setShowScanner(true);
   };
 
@@ -150,6 +158,13 @@ function App() {
             onClick={() => {
               setView('scan');
               resetScanFlow();
+              
+              // Si ya hay supermercado y fecha en ajustes, ir directamente al escáner
+              const settings = getSettings();
+              if (settings.supermercado && settings.fecha) {
+                setSelectedSupermarket(settings.supermercado);
+                setShowScanner(true);
+              }
             }}
             className={`flex items-center gap-2 px-4 py-2 rounded-lg font-semibold transition-colors ${
               view === 'scan'
@@ -171,7 +186,7 @@ function App() {
         )}
 
         {/* Vista: Escanear Producto */}
-        {view === 'scan' && !selectedSupermarket && !showScanner && !showProductSearch && !showProductForm && !showPriceEntry && (
+        {view === 'scan' && !showScanner && !showProductSearch && !showProductForm && !showPriceEntry && (
           <SupermarketSelector
             selectedSupermarket={selectedSupermarket}
             onSelect={handleSupermarketSelected}
@@ -254,6 +269,8 @@ function App() {
               setSelectedSupermarket(null);
             }
           }}
+          selectedSupermarket={selectedSupermarket}
+          autoStart={true}
         />
       )}
 
