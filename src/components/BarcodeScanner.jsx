@@ -90,38 +90,19 @@ const BarcodeScanner = ({ onScan, onClose, selectedSupermarket, autoStart = fals
       // Intentar con diferentes configuraciones de cámara
       for (const config of cameraConfigs) {
         try {
-          // Configuración ultra-optimizada para máxima velocidad de reconocimiento
           const scanConfig = {
-            fps: 15,
-            qrbox: function(viewfinderWidth, viewfinderHeight) {
-              // Área de escaneo mínima pero efectiva: menos píxeles = procesamiento ultra-rápido
-              // Rectángulo horizontal perfecto para códigos de barras
-              // Si el código está claro y nítido, un área más pequeña es suficiente y más rápida
-              const widthPercentage = 0.9; // 90% del ancho para asegurar captura completa
-              const heightPercentage = 0.25; // Solo 25% del alto (mínimo necesario para códigos de barras)
-              return {
-                width: Math.floor(viewfinderWidth * widthPercentage),
-                height: Math.floor(viewfinderHeight * heightPercentage)
-              };
-            },
-            // no aspectRatio
-            // Solo buscar códigos de barras lineales más comunes (menos formatos = más rápido)
-            // Priorizar EAN_13 que es el más común en productos de supermercado
+            fps: 12,
+            qrbox: (w, h) => ({
+              width: Math.floor(w * 0.92),
+              height: Math.floor(h * 0.25), // franja más fina
+            }),
             formatsToSupport: [
-              Html5QrcodeSupportedFormats.EAN_13, // El más común en productos
+              Html5QrcodeSupportedFormats.EAN_13,
               Html5QrcodeSupportedFormats.EAN_8,
-              Html5QrcodeSupportedFormats.UPC_A,
-              Html5QrcodeSupportedFormats.UPC_E,
-              Html5QrcodeSupportedFormats.CODE_128,
-              Html5QrcodeSupportedFormats.CODE_39
             ],
-            // CRÍTICO: Usar el decodificador nativo del navegador (BarcodeDetector API)
-            // Esto es MUCHO más rápido que el decodificador JavaScript (hasta 10x más rápido)
             useBarCodeDetectorIfSupported: true,
-            // Recordar la última cámara usada para iniciar más rápido
             rememberLastUsedCamera: true,
-            // Configuración adicional para mejor rendimiento
-            verbose: false // Deshabilitar logs para mejor rendimiento
+            verbose: false,
           };
 
           // Verificar si el navegador soporta BarcodeDetector API (mucho más rápido)
