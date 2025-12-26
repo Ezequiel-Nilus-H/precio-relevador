@@ -162,7 +162,13 @@ app.get('/api/products/ean/:ean', async (req, res) => {
       return res.status(404).json({ error: 'Producto no encontrado' });
     }
     
-    res.json(products);
+    // Convertir ObjectId a string para JSON
+    const productsWithStringIds = products.map(p => ({
+      ...p,
+      _id: p._id.toString()
+    }));
+    
+    res.json(productsWithStringIds);
   } catch (error) {
     console.error('Error buscando producto:', error);
     res.status(500).json({ error: 'Error al buscar producto' });
@@ -657,10 +663,16 @@ app.post('/api/products/:id/add-ean', async (req, res) => {
       return res.status(400).json({ error: 'Se requiere EAN' });
     }
 
+    // Convertir el ID a ObjectId si es válido
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).json({ error: 'ID inválido' });
+    }
+    const objectId = new ObjectId(id);
+
     const database = await getDb();
     const collection = database.collection(COLLECTION_NAME);
     
-    const product = await collection.findOne({ _id: id });
+    const product = await collection.findOne({ _id: objectId });
     if (!product) {
       return res.status(404).json({ error: 'Producto no encontrado' });
     }
@@ -675,12 +687,17 @@ app.post('/api/products/:id/add-ean', async (req, res) => {
     }
 
     await collection.updateOne(
-      { _id: id },
+      { _id: objectId },
       { $set: { eans, ean: eans[0] } } // Mantener el primero como principal
     );
 
-    const updated = await collection.findOne({ _id: id });
-    res.json(updated);
+    const updated = await collection.findOne({ _id: objectId });
+    // Convertir ObjectId a string para JSON
+    const updatedWithStringId = {
+      ...updated,
+      _id: updated._id.toString()
+    };
+    res.json(updatedWithStringId);
   } catch (error) {
     console.error('Error agregando EAN:', error);
     res.status(500).json({ error: 'Error al agregar EAN' });
@@ -692,8 +709,9 @@ app.post('/api/products', async (req, res) => {
   try {
     const { odooId, nombre, peso, categoria, subcategoria, marca, ean, eans } = req.body;
     
-    if (!ean && !eans && !odooId) {
-      return res.status(400).json({ error: 'Se requiere EAN o ID Odoo' });
+    // Requerir EAN (odooId es solo informativo, no se usa para búsqueda)
+    if (!ean && !eans) {
+      return res.status(400).json({ error: 'Se requiere EAN' });
     }
 
     const database = await getDb();
@@ -715,14 +733,15 @@ app.post('/api/products', async (req, res) => {
       precios: []
     };
 
-    // Buscar si ya existe por EAN o ID Odoo
-    const existing = await collection.findOne({
-      $or: [
-        { ean: eanPrincipal },
-        { eans: eanPrincipal },
-        { odooId: odooId }
-      ]
-    });
+    // Buscar si ya existe por EAN (odooId no se usa para búsqueda)
+    const existing = eanPrincipal 
+      ? await collection.findOne({
+          $or: [
+            { ean: eanPrincipal },
+            { eans: eanPrincipal }
+          ]
+        })
+      : null;
 
     if (existing) {
       // Actualizar producto existente
@@ -742,11 +761,21 @@ app.post('/api/products', async (req, res) => {
         }
       );
       const updated = await collection.findOne({ _id: existing._id });
-      res.json(updated);
+      // Convertir ObjectId a string para JSON
+      const updatedWithStringId = {
+        ...updated,
+        _id: updated._id.toString()
+      };
+      res.json(updatedWithStringId);
     } else {
       // Crear nuevo producto
       const result = await collection.insertOne(producto);
-      res.json({ ...producto, _id: result.insertedId });
+      // Convertir ObjectId a string para JSON
+      const newProductWithStringId = {
+        ...producto,
+        _id: result.insertedId.toString()
+      };
+      res.json(newProductWithStringId);
     }
   } catch (error) {
     console.error('Error creando/actualizando producto:', error);
