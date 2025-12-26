@@ -63,29 +63,38 @@ const PriceEntryModal = ({ product, onSave, onClose }) => {
     try {
       setLoadingPrecios(true);
       // Recargar el producto desde el servidor para obtener precios actualizados
+      let updatedProduct = null;
+      
+      // Intentar primero por EAN si existe
       const ean = product.ean || (product.eans && product.eans[0]);
       if (ean) {
         const products = await productsAPI.getByEAN(ean);
         if (products && products.length > 0) {
-          const updatedProduct = products[0];
-          // Actualizar los precios con los datos del servidor
-          if (updatedProduct.precios && Array.isArray(updatedProduct.precios)) {
-            // Asegurar que los ObjectId se conviertan a string
-            const preciosActualizados = updatedProduct.precios.map(p => ({
-              ...p,
-              _id: p._id?.toString() || p._id
-            }));
-            setPrecios(preciosActualizados);
-            console.log('Precios actualizados:', preciosActualizados.length);
-          } else {
-            setPrecios([]);
-          }
+          updatedProduct = products[0];
+        }
+      }
+      
+      // Si no se encontró por EAN o no hay EAN, intentar por ID
+      if (!updatedProduct && product._id) {
+        updatedProduct = await productsAPI.getById(product._id);
+      }
+      
+      if (updatedProduct) {
+        // Actualizar los precios con los datos del servidor
+        if (updatedProduct.precios && Array.isArray(updatedProduct.precios)) {
+          // Asegurar que los ObjectId se conviertan a string
+          const preciosActualizados = updatedProduct.precios.map(p => ({
+            ...p,
+            _id: p._id?.toString() || p._id
+          }));
+          setPrecios(preciosActualizados);
+          console.log('Precios actualizados:', preciosActualizados.length);
         } else {
-          // Si no se encuentra, mantener los precios actuales
-          console.log('Producto no encontrado, manteniendo precios actuales');
+          setPrecios([]);
         }
       } else {
-        console.log('No hay EAN, no se pueden recargar precios');
+        // Si no se encuentra, mantener los precios actuales
+        console.log('Producto no encontrado, manteniendo precios actuales');
       }
     } catch (error) {
       console.error('Error cargando precios:', error);

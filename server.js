@@ -18,29 +18,93 @@ let client = null;
 let db = null;
 
 async function getDb() {
-  try {
-    if (!client) {
-      client = new MongoClient(MONGODB_URI);
+  // Si no hay cliente, crear uno nuevo
+  if (!client) {
+    try {
+      // Opciones de conexión para mantener la conexión viva
+      const clientOptions = {
+        serverSelectionTimeoutMS: 5000,
+        socketTimeoutMS: 45000,
+        connectTimeoutMS: 10000,
+        maxPoolSize: 10,
+        minPoolSize: 1,
+        maxIdleTimeMS: 30000,
+        retryWrites: true,
+        retryReads: true,
+      };
+      
+      client = new MongoClient(MONGODB_URI, clientOptions);
       await client.connect();
       db = client.db(DB_NAME);
+      console.log('✅ Conexión a MongoDB establecida');
+    } catch (error) {
+      console.error('Error conectando a MongoDB:', error);
+      client = null;
+      db = null;
+      throw error;
     }
-    // Verificar que la conexión sigue activa
-    if (!db) {
-      throw new Error('Database connection is null');
+  }
+  
+  // Verificar que db existe
+  if (!db && client) {
+    try {
+      db = client.db(DB_NAME);
+    } catch (error) {
+      console.error('Error obteniendo database:', error);
+      // Intentar reconectar
+      await reconnect();
     }
-    return db;
+  }
+  
+  // Intentar hacer un ping para verificar que la conexión sigue activa
+  if (client && db) {
+    try {
+      await client.db('admin').command({ ping: 1 });
+    } catch (error) {
+      console.warn('Conexión inactiva, reconectando...', error.message);
+      await reconnect();
+    }
+  }
+  
+  if (!db) {
+    throw new Error('Database connection is null');
+  }
+  
+  return db;
+}
+
+async function reconnect() {
+  // Cerrar conexión anterior
+  if (client) {
+    try {
+      await client.close();
+    } catch (closeError) {
+      // Ignorar errores al cerrar
+    }
+  }
+  
+  client = null;
+  db = null;
+  
+  // Intentar reconectar
+  try {
+    const clientOptions = {
+      serverSelectionTimeoutMS: 5000,
+      socketTimeoutMS: 45000,
+      connectTimeoutMS: 10000,
+      maxPoolSize: 10,
+      minPoolSize: 1,
+      maxIdleTimeMS: 30000,
+      retryWrites: true,
+      retryReads: true,
+    };
+    
+    client = new MongoClient(MONGODB_URI, clientOptions);
+    await client.connect();
+    db = client.db(DB_NAME);
+    console.log('✅ Reconexión a MongoDB establecida');
   } catch (error) {
-    console.error('Error en getDb():', error);
-    // Resetear la conexión para intentar reconectar
-    if (client) {
-      try {
-        await client.close();
-      } catch (closeError) {
-        console.error('Error cerrando conexión:', closeError);
-      }
-    }
-    client = null;
-    db = null;
+    console.error('Error en reconexión:', error);
     throw error;
   }
 }
@@ -411,6 +475,95 @@ app.post('/api/metadata/regenerate', async (req, res) => {
   } catch (error) {
     console.error('Error regenerando metadata:', error);
     res.status(500).json({ error: 'Error regenerando metadata' });
+  }
+});
+
+// Endpoint para obtener completitud de precios por subcategoría
+app.get('/api/metadata/subcategorias/completitud', async (req, res) => {
+  try {
+    const { categoria, supermercado, fecha } = req.query;
+    
+    if (!categoria) {
+      return res.status(400).json({ error: 'Se requiere categoría' });
+    }
+    
+    if (!supermercado || !fecha) {
+      // Si no hay supermercado o fecha, retornar 0% para todas las subcategorías
+      const database = await getDb();
+      const metadataCollection = database.collection('metadata');
+      const metadataDoc = await metadataCollection.findOne({ type: 'categories' });
+      
+      const subcategorias = metadataDoc?.categoriaSubcategorias?.[categoria] || [];
+      const completitud = {};
+      subcategorias.forEach(sub => {
+        completitud[sub] = { total: 0, completos: 0, porcentaje: 0 };
+      });
+      
+      return res.json(completitud);
+    }
+    
+    const database = await getDb();
+    const collection = database.collection(COLLECTION_NAME);
+    
+    // Parsear la fecha
+    let fechaBuscadaStr = fecha;
+    if (fecha.includes('T')) {
+      fechaBuscadaStr = fecha.split('T')[0];
+    }
+    const supermercadoBuscado = String(supermercado || '').trim().toLowerCase();
+    
+    // Obtener todas las subcategorías de esta categoría
+    const productos = await collection.find({
+      categoria: categoria,
+      subcategoria: { $exists: true, $ne: null }
+    }).toArray();
+    
+    // Agrupar por subcategoría
+    const subcategoriasMap = {};
+    
+    productos.forEach(product => {
+      const sub = String(product.subcategoria).trim();
+      if (!sub) return;
+      
+      if (!subcategoriasMap[sub]) {
+        subcategoriasMap[sub] = {
+          total: 0,
+          completos: 0
+        };
+      }
+      
+      subcategoriasMap[sub].total++;
+      
+      // Verificar si tiene precio para este supermercado y fecha
+      const matchingPrices = (product.precios || []).filter(precio => {
+        const precioFecha = new Date(precio.fecha);
+        const precioSupermercado = String(precio.supermercado || '').trim().toLowerCase();
+        const precioFechaStr = precioFecha.toISOString().split('T')[0];
+        
+        return precioSupermercado === supermercadoBuscado && precioFechaStr === fechaBuscadaStr;
+      });
+      
+      if (matchingPrices.length > 0) {
+        subcategoriasMap[sub].completos++;
+      }
+    });
+    
+    // Calcular porcentajes
+    const completitud = {};
+    Object.keys(subcategoriasMap).forEach(sub => {
+      const { total, completos } = subcategoriasMap[sub];
+      const porcentaje = total > 0 ? Math.round((completos / total) * 100) : 0;
+      completitud[sub] = {
+        total,
+        completos,
+        porcentaje
+      };
+    });
+    
+    res.json(completitud);
+  } catch (error) {
+    console.error('Error calculando completitud:', error);
+    res.status(500).json({ error: 'Error calculando completitud' });
   }
 });
 
@@ -831,6 +984,38 @@ app.get('/api/products/ean/:ean/prices', async (req, res) => {
   } catch (error) {
     console.error('Error obteniendo precios:', error);
     res.status(500).json({ error: 'Error al obtener precios' });
+  }
+});
+
+// Obtener producto por ID (debe ir después de todas las rutas específicas)
+app.get('/api/products/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const database = await getDb();
+    const collection = database.collection(COLLECTION_NAME);
+    
+    // Convertir el ID a ObjectId si es válido
+    let product;
+    if (ObjectId.isValid(id)) {
+      product = await collection.findOne({ _id: new ObjectId(id) });
+    } else {
+      return res.status(400).json({ error: 'ID inválido' });
+    }
+    
+    if (!product) {
+      return res.status(404).json({ error: 'Producto no encontrado' });
+    }
+    
+    // Convertir ObjectId a string para JSON
+    const productWithStringId = {
+      ...product,
+      _id: product._id.toString()
+    };
+    
+    res.json(productWithStringId);
+  } catch (error) {
+    console.error('Error obteniendo producto:', error);
+    res.status(500).json({ error: 'Error al obtener producto' });
   }
 });
 

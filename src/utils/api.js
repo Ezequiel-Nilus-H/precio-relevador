@@ -46,6 +46,20 @@ export const productsAPI = {
     return fetchAPI('/products');
   },
 
+  // Obtener producto por ID
+  getById: async (id) => {
+    try {
+      return await fetchAPI(`/products/${id}`);
+    } catch (error) {
+      // Si es un 404 (producto no encontrado), retornar null en lugar de lanzar error
+      if (error.message.includes('404') || error.message.includes('no encontrado')) {
+        return null;
+      }
+      // Para otros errores, lanzar el error normalmente
+      throw error;
+    }
+  },
+
   // Buscar producto por EAN
   getByEAN: async (ean) => {
     try {
@@ -107,6 +121,12 @@ export const metadataAPI = {
     return fetchAPI('/metadata/regenerate', {
       method: 'POST',
     });
+  },
+  getSubcategoriasCompletitud: async (categoria, supermercado, fecha) => {
+    const params = new URLSearchParams({ categoria });
+    if (supermercado) params.append('supermercado', supermercado);
+    if (fecha) params.append('fecha', fecha);
+    return fetchAPI(`/metadata/subcategorias/completitud?${params}`);
   },
 };
 

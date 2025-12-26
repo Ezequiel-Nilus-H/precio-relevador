@@ -14,6 +14,7 @@ const ProductSearch = ({ onSelectProduct, onPriceSaved }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [settings, setSettings] = useState(null);
+  const [subcategoriasCompletitud, setSubcategoriasCompletitud] = useState({});
 
   useEffect(() => {
     loadMetadata();
@@ -63,11 +64,21 @@ const ProductSearch = ({ onSelectProduct, onPriceSaved }) => {
     // Búsqueda automática por categoría
     if (searchType === 'categoria' && selectedCategoria) {
       searchByCategory();
+      loadSubcategoriasCompletitud();
     } else if (searchType === 'categoria' && !selectedCategoria) {
       setProducts([]);
+      setSubcategoriasCompletitud({});
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedCategoria, selectedSubcategoria, searchType]);
+
+  useEffect(() => {
+    // Recargar completitud cuando cambian los settings
+    if (searchType === 'categoria' && selectedCategoria) {
+      loadSubcategoriasCompletitud();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settings?.supermercado, settings?.fecha]);
 
   useEffect(() => {
     // Búsqueda automática por marca
@@ -93,6 +104,25 @@ const ProductSearch = ({ onSelectProduct, onPriceSaved }) => {
         categoriaSubcategorias: {},
         marcas: []
       });
+    }
+  };
+
+  const loadSubcategoriasCompletitud = async () => {
+    if (!selectedCategoria || !settings?.supermercado || !settings?.fecha) {
+      setSubcategoriasCompletitud({});
+      return;
+    }
+    
+    try {
+      const completitud = await metadataAPI.getSubcategoriasCompletitud(
+        selectedCategoria,
+        settings.supermercado,
+        settings.fecha
+      );
+      setSubcategoriasCompletitud(completitud || {});
+    } catch (error) {
+      console.error('Error cargando completitud:', error);
+      setSubcategoriasCompletitud({});
     }
   };
 
@@ -323,19 +353,57 @@ const ProductSearch = ({ onSelectProduct, onPriceSaved }) => {
                   )}
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 mb-3">
-                  <button
-                    onClick={() => {
-                      setSelectedSubcategoria('');
-                      // La búsqueda se ejecutará automáticamente por el useEffect
-                    }}
-                    className={`p-3 bg-white border-2 rounded-lg hover:border-blue-500 hover:bg-blue-50 transition-all cursor-pointer text-left ${
-                      !selectedSubcategoria
-                        ? 'border-blue-500 bg-blue-50'
-                        : 'border-gray-200'
-                    }`}
-                  >
-                    <span className="font-medium text-gray-700 text-sm">Todas</span>
-                  </button>
+                  {(() => {
+                    // Calcular completitud total de la categoría
+                    let totalCompletos = 0;
+                    let totalProductos = 0;
+                    Object.values(subcategoriasCompletitud).forEach(info => {
+                      totalCompletos += info.completos || 0;
+                      totalProductos += info.total || 0;
+                    });
+                    const porcentajeTotal = totalProductos > 0 ? Math.round((totalCompletos / totalProductos) * 100) : 0;
+                    
+                    let colorClassTotal = 'text-gray-400';
+                    let bgClassTotal = '';
+                    if (porcentajeTotal === 100) {
+                      colorClassTotal = 'text-green-600';
+                      bgClassTotal = 'bg-green-50';
+                    } else if (porcentajeTotal >= 50) {
+                      colorClassTotal = 'text-yellow-600';
+                      bgClassTotal = 'bg-yellow-50';
+                    } else if (porcentajeTotal > 0) {
+                      colorClassTotal = 'text-orange-600';
+                      bgClassTotal = 'bg-orange-50';
+                    }
+                    
+                    return (
+                      <button
+                        onClick={() => {
+                          setSelectedSubcategoria('');
+                          // La búsqueda se ejecutará automáticamente por el useEffect
+                        }}
+                        className={`p-3 bg-white border-2 rounded-lg hover:border-blue-500 hover:bg-blue-50 transition-all cursor-pointer text-left ${
+                          !selectedSubcategoria
+                            ? 'border-blue-500 bg-blue-50'
+                            : 'border-gray-200'
+                        } ${totalProductos > 0 ? bgClassTotal : ''}`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-medium text-gray-700 text-sm">Todas</span>
+                          {totalProductos > 0 && (
+                            <div className="flex-shrink-0 text-xs font-semibold" style={{ color: porcentajeTotal === 100 ? '#16a34a' : porcentajeTotal >= 50 ? '#ca8a04' : porcentajeTotal > 0 ? '#ea580c' : '#6b7280' }}>
+                              {porcentajeTotal}%
+                            </div>
+                          )}
+                        </div>
+                        {totalProductos > 0 && (
+                          <div className="mt-1 text-xs text-gray-500">
+                            {totalCompletos}/{totalProductos} productos
+                          </div>
+                        )}
+                      </button>
+                    );
+                  })()}
                   {(() => {
                     const subcategorias = (metadata.categoriaSubcategorias && metadata.categoriaSubcategorias[selectedCategoria]) || [];
                     
@@ -347,24 +415,55 @@ const ProductSearch = ({ onSelectProduct, onPriceSaved }) => {
                       );
                     }
                     
-                    return subcategorias.map((sub) => (
-                      <button
-                        key={sub}
-                        onClick={() => setSelectedSubcategoria(sub)}
-                        className={`p-3 bg-white border-2 rounded-lg hover:border-blue-500 hover:bg-blue-50 transition-all cursor-pointer text-left ${
-                          selectedSubcategoria === sub
-                            ? 'border-blue-500 bg-blue-50'
-                            : 'border-gray-200'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2">
-                          <Tag size={16} className="text-gray-400" />
-                          <span className="font-medium text-gray-700 text-sm">
-                            {sub}
-                          </span>
-                        </div>
-                      </button>
-                    ));
+                    return subcategorias.map((sub) => {
+                      const completitudInfo = subcategoriasCompletitud[sub] || { porcentaje: 0, completos: 0, total: 0 };
+                      const porcentaje = completitudInfo.porcentaje || 0;
+                      const completos = completitudInfo.completos || 0;
+                      const total = completitudInfo.total || 0;
+                      
+                      // Extraer solo el nombre (después del " - ")
+                      const nombreSubcategoria = sub.includes(' - ') ? sub.split(' - ')[1] : sub;
+                      
+                      // Determinar color según el porcentaje
+                      let bgClass = '';
+                      let porcentajeColor = '#6b7280';
+                      if (porcentaje === 100) {
+                        bgClass = 'bg-green-50';
+                        porcentajeColor = '#16a34a';
+                      } else if (porcentaje >= 50) {
+                        bgClass = 'bg-yellow-50';
+                        porcentajeColor = '#ca8a04';
+                      } else if (porcentaje > 0) {
+                        bgClass = 'bg-orange-50';
+                        porcentajeColor = '#ea580c';
+                      }
+                      
+                      return (
+                        <button
+                          key={sub}
+                          onClick={() => setSelectedSubcategoria(sub)}
+                          className={`p-3 bg-white border-2 rounded-lg hover:border-blue-500 hover:bg-blue-50 transition-all cursor-pointer text-left ${
+                            selectedSubcategoria === sub
+                              ? 'border-blue-500 bg-blue-50'
+                              : 'border-gray-200'
+                          } ${total > 0 ? bgClass : ''}`}
+                        >
+                          <div className="font-medium text-gray-700 text-sm truncate mb-1">
+                            {nombreSubcategoria}
+                          </div>
+                          {total > 0 && (
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="text-xs text-gray-500">
+                                {completos}/{total} productos
+                              </div>
+                              <div className="text-xs font-semibold" style={{ color: porcentajeColor }}>
+                                {porcentaje}%
+                              </div>
+                            </div>
+                          )}
+                        </button>
+                      );
+                    });
                   })()}
                 </div>
               </div>
