@@ -9,6 +9,7 @@
     "dev:all": "concurrently \"npm run dev:api\" \"npm run dev\"",
     "import:csv": "node scripts/import-csv.js",
     "build": "vite build",
+    "start": "NODE_ENV=production node server.js",
     "lint": "eslint .",
     "preview": "vite preview"
   },

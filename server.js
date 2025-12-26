@@ -1,12 +1,18 @@
 import express from 'express';
 import cors from 'cors';
 import { MongoClient, ObjectId } from 'mongodb';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import fs from 'fs';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-const MONGODB_URI = 'mongodb+srv://data_ventas:Uc1pXMnnx3alzEoA@relevamiento.jzagvuu.mongodb.net/?appName=relevamiento';
-const DB_NAME = 'relevamiento';
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://data_ventas:Uc1pXMnnx3alzEoA@relevamiento.jzagvuu.mongodb.net/?appName=relevamiento';
+const DB_NAME = process.env.DB_NAME || 'relevamiento';
 const COLLECTION_NAME = 'productos';
 
 // Middleware
@@ -78,7 +84,7 @@ async function reconnect() {
   if (client) {
     try {
       await client.close();
-    } catch (closeError) {
+    } catch {
       // Ignorar errores al cerrar
     }
   }
@@ -1053,7 +1059,35 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+// Servir archivos estáticos en producción (solo si SERVE_STATIC no está en false)
+// Esto permite usar el mismo código para servicio único o solo API
+if (process.env.NODE_ENV === 'production' && process.env.SERVE_STATIC !== 'false') {
+  const distPath = path.join(__dirname, 'dist');
+  
+  // Verificar que la carpeta dist existe antes de servirla
+  if (fs.existsSync(distPath)) {
+    app.use(express.static(distPath));
+    
+    // Catch-all handler: enviar index.html para todas las rutas que no sean API
+    app.get('*', (req, res) => {
+      // Si la ruta comienza con /api, no servir el index.html
+      if (req.path.startsWith('/api')) {
+        return res.status(404).json({ error: 'Endpoint no encontrado' });
+      }
+      res.sendFile(path.join(distPath, 'index.html'));
+    });
+    console.log('📦 Sirviendo archivos estáticos desde /dist');
+  } else {
+    console.log('⚠️  Carpeta /dist no encontrada, sirviendo solo API');
+  }
+}
+
 app.listen(PORT, () => {
-  console.log(`🚀 Servidor API corriendo en http://localhost:${PORT}`);
+  console.log(`🚀 Servidor corriendo en puerto ${PORT}`);
+  if (process.env.NODE_ENV === 'production') {
+    console.log('📦 Modo producción: sirviendo archivos estáticos desde /dist');
+  } else {
+    console.log('🔧 Modo desarrollo: solo API');
+  }
 });
 

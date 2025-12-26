@@ -1,0 +1,38 @@
+# Configuración para separar Frontend y Backend en dos servicios
+# Usa este archivo si prefieres tener servicios separados
+
+services:
+  # Servicio Backend (API)
+  - type: web
+    name: precio-relevador-api
+    env: node
+    buildCommand: npm install
+    startCommand: node server.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: MONGODB_URI
+        sync: false
+      - key: DB_NAME
+        value: relevamiento
+      - key: PORT
+        value: 3001
+      - key: SERVE_STATIC
+        value: false
+    healthCheckPath: /api/health
+
+  # Servicio Frontend (React)
+  - type: web
+    name: precio-relevador-frontend
+    env: node
+    buildCommand: npm install && npm run build
+    startCommand: npm run preview
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: VITE_API_URL
+        # Reemplaza con la URL de tu servicio backend después de crearlo
+        # Ejemplo: https://precio-relevador-api.onrender.com/api
+        value: https://precio-relevador-api.onrender.com/api
+    # Nota: Vite preview sirve los archivos estáticos del build
+

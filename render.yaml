@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: precio-relevador
+    env: node
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: MONGODB_URI
+        sync: false
+      - key: DB_NAME
+        value: relevamiento
+    healthCheckPath: /api/health
+

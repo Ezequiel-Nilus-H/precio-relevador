@@ -9,10 +9,14 @@ export default defineConfig({
     react(),
   ],
   server: {
-    https: {
-      key: fs.readFileSync(path.resolve(__dirname, '.certificates/key.pem')),
-      cert: fs.readFileSync(path.resolve(__dirname, '.certificates/cert.pem')),
-    },
+    // Solo configurar HTTPS si los certificados existen (desarrollo local)
+    ...(fs.existsSync(path.resolve(__dirname, '.certificates/key.pem')) && 
+        fs.existsSync(path.resolve(__dirname, '.certificates/cert.pem')) ? {
+      https: {
+        key: fs.readFileSync(path.resolve(__dirname, '.certificates/key.pem')),
+        cert: fs.readFileSync(path.resolve(__dirname, '.certificates/cert.pem')),
+      },
+    } : {}),
     host: true, // Permite acceso desde otros dispositivos en la red
     proxy: {
       // Proxy para la API - convierte llamadas HTTPS a HTTP internamente
