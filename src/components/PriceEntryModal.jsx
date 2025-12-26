@@ -70,22 +70,26 @@ const PriceEntryModal = ({ product, onSave, onClose }) => {
           const updatedProduct = products[0];
           // Actualizar los precios con los datos del servidor
           if (updatedProduct.precios && Array.isArray(updatedProduct.precios)) {
-            setPrecios(updatedProduct.precios);
+            // Asegurar que los ObjectId se conviertan a string
+            const preciosActualizados = updatedProduct.precios.map(p => ({
+              ...p,
+              _id: p._id?.toString() || p._id
+            }));
+            setPrecios(preciosActualizados);
+            console.log('Precios actualizados:', preciosActualizados.length);
           } else {
             setPrecios([]);
           }
         } else {
-          // Si no se encuentra, usar los precios del producto actual
-          setPrecios(product.precios || []);
+          // Si no se encuentra, mantener los precios actuales
+          console.log('Producto no encontrado, manteniendo precios actuales');
         }
       } else {
-        // Si no hay EAN, usar los precios del producto actual
-        setPrecios(product.precios || []);
+        console.log('No hay EAN, no se pueden recargar precios');
       }
     } catch (error) {
       console.error('Error cargando precios:', error);
-      // Fallback: usar los precios del producto actual
-      setPrecios(product.precios || []);
+      // En caso de error, mantener los precios actuales en lugar de resetear
     } finally {
       setLoadingPrecios(false);
     }
@@ -126,30 +130,11 @@ const PriceEntryModal = ({ product, onSave, onClose }) => {
       
       console.log('Precio guardado exitosamente');
       
-      // Actualizar la lista de precios con los datos del servidor
-      if (result && result.productos && result.productos.length > 0) {
-        const updatedProduct = result.productos[0];
-        // Convertir ObjectId a string si es necesario
-        if (updatedProduct._id && typeof updatedProduct._id !== 'string') {
-          updatedProduct._id = updatedProduct._id.toString();
-        }
-        // Actualizar los precios con los datos del servidor
-        if (updatedProduct.precios && Array.isArray(updatedProduct.precios)) {
-          setPrecios(updatedProduct.precios);
-        }
-      } else {
-        // Fallback: agregar el nuevo precio a la lista local si no hay respuesta del servidor
-        const nuevoPrecio = {
-          precio: parseFloat(price),
-          supermercado: settings.supermercado,
-          fecha: settings.fecha,
-          relevador: settings.relevador,
-          modalidad: modalidad,
-          cantidadMinima: cantidadMinimaValue,
-          fuente: 'app'
-        };
-        setPrecios([nuevoPrecio, ...precios]);
-      }
+      // Pequeño delay para asegurar que el servidor haya procesado el cambio
+      await new Promise(resolve => setTimeout(resolve, 200));
+      
+      // Recargar precios desde el servidor para asegurar que estén actualizados
+      await loadPrecios();
       
       // Limpiar el formulario
       setPrice('');
