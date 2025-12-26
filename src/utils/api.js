@@ -75,8 +75,15 @@ export const productsAPI = {
   },
 
   // Buscar productos
-  search: async (query) => {
-    return fetchAPI(`/products/search?q=${encodeURIComponent(query)}`);
+  search: async (query, additionalParams = {}) => {
+    const params = new URLSearchParams({ q: query });
+    // Agregar parámetros adicionales (supermercado, fecha, etc.)
+    Object.entries(additionalParams).forEach(([key, value]) => {
+      if (value !== null && value !== undefined && value !== '') {
+        params.append(key, value);
+      }
+    });
+    return fetchAPI(`/products/search?${params}`);
   },
 
   // Crear o actualizar producto
@@ -162,15 +169,28 @@ export const productOperationsAPI = {
 
 // Buscar productos por categoría
 export const searchByCategoryAPI = {
-  byCategory: async (categoria, subcategoria) => {
+  byCategory: async (categoria, subcategoria, additionalParams = {}) => {
     const params = new URLSearchParams();
     if (categoria) params.append('categoria', categoria);
     if (subcategoria) params.append('subcategoria', subcategoria);
+    // Agregar parámetros adicionales (supermercado, fecha, etc.)
+    Object.entries(additionalParams).forEach(([key, value]) => {
+      if (value !== null && value !== undefined && value !== '') {
+        params.append(key, value);
+      }
+    });
     return fetchAPI(`/products/by-category?${params}`);
   },
   
-  byBrand: async (marca) => {
-    return fetchAPI(`/products/by-brand?marca=${encodeURIComponent(marca)}`);
+  byBrand: async (marca, additionalParams = {}) => {
+    const params = new URLSearchParams({ marca: encodeURIComponent(marca) });
+    // Agregar parámetros adicionales (supermercado, fecha, etc.)
+    Object.entries(additionalParams).forEach(([key, value]) => {
+      if (value !== null && value !== undefined && value !== '') {
+        params.append(key, value);
+      }
+    });
+    return fetchAPI(`/products/by-brand?${params}`);
   },
 };
 

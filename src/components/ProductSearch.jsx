@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Search, Package, Filter, Tag, ArrowLeft } from 'lucide-react';
-import { productsAPI, metadataAPI } from '../utils/api';
+import { productsAPI, metadataAPI, searchByCategoryAPI } from '../utils/api';
 import { getSettings } from '../utils/storage';
 
 const ProductSearch = ({ onSelectProduct, onPriceSaved }) => {
@@ -130,16 +130,11 @@ const ProductSearch = ({ onSelectProduct, onPriceSaved }) => {
     try {
       setLoading(true);
       setError(null);
-      const params = new URLSearchParams({ q: query });
-      if (settings?.supermercado) params.append('supermercado', settings.supermercado);
-      if (settings?.fecha) params.append('fecha', settings.fecha);
+      const additionalParams = {};
+      if (settings?.supermercado) additionalParams.supermercado = settings.supermercado;
+      if (settings?.fecha) additionalParams.fecha = settings.fecha;
       
-      const url = `${import.meta.env.VITE_API_URL || 'http://localhost:3001/api'}/products/search?${params}`;
-      const response = await fetch(url);
-      if (!response.ok) {
-        throw new Error('Error al buscar productos');
-      }
-      const results = await response.json();
+      const results = await productsAPI.search(query, additionalParams);
       setProducts(results);
     } catch (error) {
       console.error('Error buscando productos:', error);
@@ -154,18 +149,15 @@ const ProductSearch = ({ onSelectProduct, onPriceSaved }) => {
     try {
       setLoading(true);
       setError(null);
-      const params = new URLSearchParams();
-      if (selectedCategoria) params.append('categoria', selectedCategoria);
-      if (selectedSubcategoria) params.append('subcategoria', selectedSubcategoria);
-      if (settings?.supermercado) params.append('supermercado', settings.supermercado);
-      if (settings?.fecha) params.append('fecha', settings.fecha);
+      const additionalParams = {};
+      if (settings?.supermercado) additionalParams.supermercado = settings.supermercado;
+      if (settings?.fecha) additionalParams.fecha = settings.fecha;
       
-      const url = `${import.meta.env.VITE_API_URL || 'http://localhost:3001/api'}/products/by-category?${params}`;
-      const response = await fetch(url);
-      if (!response.ok) {
-        throw new Error('Error al buscar por categoría');
-      }
-      const data = await response.json();
+      const data = await searchByCategoryAPI.byCategory(
+        selectedCategoria,
+        selectedSubcategoria,
+        additionalParams
+      );
       setProducts(data);
     } catch (error) {
       console.error('Error buscando por categoría:', error);
@@ -180,16 +172,11 @@ const ProductSearch = ({ onSelectProduct, onPriceSaved }) => {
     try {
       setLoading(true);
       setError(null);
-      const params = new URLSearchParams({ marca: selectedMarca });
-      if (settings?.supermercado) params.append('supermercado', settings.supermercado);
-      if (settings?.fecha) params.append('fecha', settings.fecha);
+      const additionalParams = {};
+      if (settings?.supermercado) additionalParams.supermercado = settings.supermercado;
+      if (settings?.fecha) additionalParams.fecha = settings.fecha;
       
-      const url = `${import.meta.env.VITE_API_URL || 'http://localhost:3001/api'}/products/by-brand?${params}`;
-      const response = await fetch(url);
-      if (!response.ok) {
-        throw new Error('Error al buscar por marca');
-      }
-      const data = await response.json();
+      const data = await searchByCategoryAPI.byBrand(selectedMarca, additionalParams);
       setProducts(data);
     } catch (error) {
       console.error('Error buscando por marca:', error);
