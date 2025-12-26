@@ -1069,11 +1069,13 @@ if (process.env.NODE_ENV === 'production' && process.env.SERVE_STATIC !== 'false
     app.use(express.static(distPath));
     
     // Catch-all handler: enviar index.html para todas las rutas que no sean API
-    app.get('*', (req, res) => {
+    // Usamos app.use en lugar de app.get('*') porque Express 5 no soporta '*' directamente
+    app.use((req, res, next) => {
       // Si la ruta comienza con /api, no servir el index.html
       if (req.path.startsWith('/api')) {
         return res.status(404).json({ error: 'Endpoint no encontrado' });
       }
+      // Para todas las demás rutas, servir index.html (SPA routing)
       res.sendFile(path.join(distPath, 'index.html'));
     });
     console.log('📦 Sirviendo archivos estáticos desde /dist');
