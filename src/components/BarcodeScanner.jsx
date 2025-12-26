@@ -1,35 +1,59 @@
 import { useEffect, useRef, useState } from 'react';
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
-import { X, Camera, AlertCircle, Store, Calendar } from 'lucide-react';
+import { X, Camera, AlertCircle, Store, Calendar, Keyboard } from 'lucide-react';
 import { getSettings } from '../utils/storage';
 
 const BarcodeScanner = ({ onScan, onClose, selectedSupermarket, autoStart = false }) => {
   const [isScanning, setIsScanning] = useState(false);
   const [error, setError] = useState(null);
   const [isRequestingPermission, setIsRequestingPermission] = useState(false);
+  const [manualMode, setManualMode] = useState(false);
+  const [manualEAN, setManualEAN] = useState('');
   const scannerRef = useRef(null);
   const html5QrCodeRef = useRef(null);
   const hasAutoStarted = useRef(false);
+  const scannerStarted = useRef(false);
 
   useEffect(() => {
+    // Resetear estado al montar
+    setIsScanning(false);
+    setError(null);
+    scannerStarted.current = false;
+    
     // Verificar compatibilidad del navegador al montar
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       setError('⚠️ Tu navegador no soporta el acceso a la cámara.\n\nPor favor, usa un navegador moderno como Chrome, Firefox, Safari o Edge.');
-    } else if (autoStart && !hasAutoStarted.current) {
-      // Iniciar automáticamente si autoStart está activo
+    } else if (autoStart && !hasAutoStarted.current && !manualMode) {
+      // Iniciar automáticamente si autoStart está activo y no estamos en modo manual
       hasAutoStarted.current = true;
       // Pequeño delay para asegurar que el DOM esté listo
       setTimeout(() => {
-        startScanning();
+        if (!manualMode && !html5QrCodeRef.current) {
+          startScanning();
+        }
       }, 100);
     }
     
     return () => {
-      if (html5QrCodeRef.current) {
-        html5QrCodeRef.current.stop().catch(() => {});
+      // Cleanup: detener y limpiar el scanner solo si realmente se inició
+      if (html5QrCodeRef.current && scannerStarted.current) {
+        const scanner = html5QrCodeRef.current;
+        // Usar setTimeout para evitar que el error se propague durante el render
+        setTimeout(() => {
+          scanner.stop().catch(() => {
+            // Ignorar completamente todos los errores
+          });
+          scanner.clear().catch(() => {
+            // Ignorar completamente todos los errores
+          });
+        }, 0);
+        html5QrCodeRef.current = null;
       }
+      // Resetear flags
+      hasAutoStarted.current = false;
+      scannerStarted.current = false;
     };
-  }, [autoStart]);
+  }, [autoStart, manualMode]);
 
   const getCameraConfigs = () => {
     // Configuraciones optimizadas para iPhone 14 Pro y dispositivos con múltiples cámaras
@@ -63,6 +87,21 @@ const BarcodeScanner = ({ onScan, onClose, selectedSupermarket, autoStart = fals
       setError(null);
       setIsRequestingPermission(true);
 
+      // Limpiar cualquier instancia previa del scanner
+      if (html5QrCodeRef.current) {
+        try {
+          await html5QrCodeRef.current.stop();
+        } catch (err) {
+          // Ignorar errores al detener instancia previa
+        }
+        try {
+          await html5QrCodeRef.current.clear();
+        } catch (err) {
+          // Ignorar errores al limpiar instancia previa
+        }
+        html5QrCodeRef.current = null;
+      }
+
       // Verificar compatibilidad del navegador
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         throw new Error('BROWSER_NOT_SUPPORTED');
@@ -92,10 +131,17 @@ const BarcodeScanner = ({ onScan, onClose, selectedSupermarket, autoStart = fals
         try {
           const scanConfig = {
             fps: 12,
-            qrbox: (w, h) => ({
-              width: Math.floor(w * 0.92),
-              height: Math.floor(h * 0.25), // franja más fina
-            }),
+            qrbox: (w, h) => {
+              // Calcular dimensiones con porcentajes
+              const width = Math.floor(w * 0.92);
+              const height = Math.floor(h * 0.25); // franja más fina
+              
+              // Asegurar tamaño mínimo de 50px (requerido por html5-qrcode)
+              return {
+                width: Math.max(width, 50),
+                height: Math.max(height, 50)
+              };
+            },
             formatsToSupport: [
               Html5QrcodeSupportedFormats.EAN_13,
               Html5QrcodeSupportedFormats.EAN_8,
@@ -193,6 +239,7 @@ const BarcodeScanner = ({ onScan, onClose, selectedSupermarket, autoStart = fals
           setIsScanning(true);
           setIsRequestingPermission(false);
           setError(null); // Limpiar cualquier error previo
+          scannerStarted.current = true; // Marcar que el scanner se inició
           return; // Éxito, salir del loop
         } catch (err) {
           lastError = err;
@@ -259,21 +306,93 @@ const BarcodeScanner = ({ onScan, onClose, selectedSupermarket, autoStart = fals
   };
 
   const stopScanning = async () => {
-    if (html5QrCodeRef.current) {
-      try {
-        await html5QrCodeRef.current.stop();
-        await html5QrCodeRef.current.clear();
-      } catch (err) {
+    if (!html5QrCodeRef.current) {
+      setIsScanning(false);
+      return;
+    }
+
+    const scanner = html5QrCodeRef.current;
+    
+    try {
+      // Intentar detener el scanner
+      await scanner.stop();
+    } catch (err) {
+      // Ignorar todos los errores relacionados con el scanner no corriendo
+      // Estos son esperados y no deben mostrarse como errores
+      const errorMessage = err.message || '';
+      const shouldIgnore = 
+        errorMessage.includes('not running') || 
+        errorMessage.includes('not started') || 
+        errorMessage.includes('not paused') ||
+        errorMessage.includes('scanner is not running') ||
+        errorMessage.includes('already under transition') ||
+        errorMessage.includes('Cannot stop');
+      
+      if (!shouldIgnore) {
         console.error('Error al detener escáner:', err);
       }
-      html5QrCodeRef.current = null;
     }
-    setIsScanning(false);
+
+    try {
+      // Limpiar el scanner
+      await scanner.clear();
+    } catch (err) {
+      // Ignorar errores al limpiar (pueden ocurrir si el scanner ya fue limpiado)
+      const errorMessage = err.message || '';
+      if (!errorMessage.includes('already under transition') && 
+          !errorMessage.includes('not running')) {
+        // Solo loguear si no es un error esperado
+      }
+    } finally {
+      html5QrCodeRef.current = null;
+      scannerStarted.current = false;
+      setIsScanning(false);
+    }
   };
 
   const handleClose = async () => {
+    // Asegurarse de detener y limpiar el scanner antes de cerrar
     await stopScanning();
+    // Pequeño delay para asegurar que todo se limpie
+    await new Promise(resolve => setTimeout(resolve, 50));
     onClose();
+  };
+
+  const handleManualSubmit = async (e) => {
+    e.preventDefault();
+    const ean = manualEAN.trim();
+    if (ean) {
+      // Solo detener el scanner si realmente está corriendo
+      if (isScanning && html5QrCodeRef.current) {
+        await stopScanning();
+        // Pequeño delay para asegurar que el scanner se haya detenido completamente
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+      // Luego llamar a onScan
+      onScan(ean);
+    }
+  };
+
+  const handleSwitchToManual = async () => {
+    // Detener el scanner si está corriendo
+    if (isScanning && html5QrCodeRef.current) {
+      try {
+        await stopScanning();
+        // Esperar un poco para que el DOM se limpie
+        await new Promise(resolve => setTimeout(resolve, 100));
+      } catch (err) {
+        // Ignorar errores al detener
+        console.log('Scanner ya detenido o error al detener:', err.message);
+      }
+    }
+    setManualMode(true);
+    setError(null);
+  };
+
+  const handleSwitchToScanner = () => {
+    setManualMode(false);
+    setManualEAN('');
+    setError(null);
   };
 
   const settings = getSettings();
@@ -307,7 +426,8 @@ const BarcodeScanner = ({ onScan, onClose, selectedSupermarket, autoStart = fals
           </div>
         )}
 
-        <div id="reader" className="w-full mb-4 rounded-lg overflow-hidden bg-gray-100" style={{ transform: 'scaleX(-1)' }}>
+        {/* El div reader siempre debe existir para html5-qrcode, solo lo ocultamos en modo manual */}
+        <div id="reader" className={`w-full mb-4 rounded-lg overflow-hidden bg-gray-100 ${manualMode ? 'hidden' : ''}`} style={{ transform: 'scaleX(-1)' }}>
           <style>{`
             #reader video {
               transform: scaleX(-1) !important;
@@ -316,6 +436,33 @@ const BarcodeScanner = ({ onScan, onClose, selectedSupermarket, autoStart = fals
             }
           `}</style>
         </div>
+
+        {manualMode && (
+          <div className="w-full mb-4 p-4 bg-gray-50 border border-gray-200 rounded-lg">
+            <form onSubmit={handleManualSubmit} className="space-y-3">
+              <label htmlFor="manual-ean" className="block text-sm font-semibold text-gray-700 mb-2">
+                Ingresar EAN manualmente:
+              </label>
+              <input
+                id="manual-ean"
+                type="text"
+                value={manualEAN}
+                onChange={(e) => setManualEAN(e.target.value.replace(/\D/g, ''))}
+                placeholder="Ingresa el código de barras (solo números)"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-lg"
+                autoFocus
+                maxLength={13}
+              />
+              <button
+                type="submit"
+                disabled={!manualEAN.trim()}
+                className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 disabled:cursor-not-allowed text-white font-semibold py-2 px-4 rounded-lg"
+              >
+                Confirmar EAN
+              </button>
+            </form>
+          </div>
+        )}
 
         {error && (
           <div className="mb-4 p-3 bg-red-50 border border-red-300 text-red-800 rounded-lg text-sm">
@@ -338,21 +485,40 @@ const BarcodeScanner = ({ onScan, onClose, selectedSupermarket, autoStart = fals
         )}
 
         <div className="flex gap-2">
-          {!isScanning ? (
-            <button
-              onClick={startScanning}
-              disabled={isRequestingPermission}
-              className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 disabled:cursor-not-allowed text-white font-semibold py-2 px-4 rounded-lg flex items-center justify-center gap-2"
-            >
-              <Camera size={20} />
-              {isRequestingPermission ? 'Solicitando permisos...' : 'Iniciar Escáner'}
-            </button>
+          {!manualMode ? (
+            <>
+              {!isScanning ? (
+                <button
+                  onClick={startScanning}
+                  disabled={isRequestingPermission}
+                  className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 disabled:cursor-not-allowed text-white font-semibold py-2 px-4 rounded-lg flex items-center justify-center gap-2"
+                >
+                  <Camera size={20} />
+                  {isRequestingPermission ? 'Solicitando permisos...' : 'Iniciar Escáner'}
+                </button>
+              ) : (
+                <button
+                  onClick={stopScanning}
+                  className="flex-1 bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-4 rounded-lg"
+                >
+                  Detener Escáner
+                </button>
+              )}
+              <button
+                onClick={handleSwitchToManual}
+                className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white font-semibold rounded-lg flex items-center justify-center gap-2"
+                title="Ingresar EAN manualmente"
+              >
+                <Keyboard size={18} />
+              </button>
+            </>
           ) : (
             <button
-              onClick={stopScanning}
-              className="flex-1 bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-4 rounded-lg"
+              onClick={handleSwitchToScanner}
+              className="flex-1 bg-gray-600 hover:bg-gray-700 text-white font-semibold py-2 px-4 rounded-lg flex items-center justify-center gap-2"
             >
-              Detener Escáner
+              <Camera size={20} />
+              Volver al Escáner
             </button>
           )}
           <button
@@ -363,13 +529,14 @@ const BarcodeScanner = ({ onScan, onClose, selectedSupermarket, autoStart = fals
           </button>
         </div>
         
-        {!error && !isScanning && (
+        {!error && !isScanning && !manualMode && (
           <div className="mt-4 p-3 bg-blue-50 border border-blue-200 text-blue-800 rounded text-sm">
             <p className="font-semibold mb-1">💡 Consejos:</p>
             <ul className="list-disc list-inside space-y-1 text-xs">
               <li>Asegúrate de dar permisos de cámara cuando se soliciten</li>
               <li>Usa buena iluminación para escanear códigos de barras</li>
               <li>Mantén el código de barras dentro del cuadro de escaneo</li>
+              <li>O haz clic en el ícono de teclado para ingresar el EAN manualmente</li>
             </ul>
           </div>
         )}

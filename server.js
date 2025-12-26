@@ -18,12 +18,31 @@ let client = null;
 let db = null;
 
 async function getDb() {
-  if (!client) {
-    client = new MongoClient(MONGODB_URI);
-    await client.connect();
-    db = client.db(DB_NAME);
+  try {
+    if (!client) {
+      client = new MongoClient(MONGODB_URI);
+      await client.connect();
+      db = client.db(DB_NAME);
+    }
+    // Verificar que la conexión sigue activa
+    if (!db) {
+      throw new Error('Database connection is null');
+    }
+    return db;
+  } catch (error) {
+    console.error('Error en getDb():', error);
+    // Resetear la conexión para intentar reconectar
+    if (client) {
+      try {
+        await client.close();
+      } catch (closeError) {
+        console.error('Error cerrando conexión:', closeError);
+      }
+    }
+    client = null;
+    db = null;
+    throw error;
   }
-  return db;
 }
 
 // Rutas
@@ -97,6 +116,12 @@ app.get('/api/products/by-category', async (req, res) => {
     
     const products = await collection.find(query).limit(100).toArray();
     
+    // Convertir ObjectId a string para JSON
+    const productsWithStringIds = products.map(p => ({
+      ...p,
+      _id: p._id.toString()
+    }));
+    
     // Si se proporciona supermercado y fecha, verificar si tienen precio
     if (supermercado && fecha) {
       // Parsear la fecha directamente desde el string YYYY-MM-DD sin conversión de zona horaria
@@ -110,7 +135,7 @@ app.get('/api/products/by-category', async (req, res) => {
       
       console.log('Verificando precios - Supermercado buscado:', supermercadoBuscado, 'Fecha buscada:', fechaBuscadaStr, 'Fecha recibida:', fecha);
       
-      const productsWithPriceInfo = products.map(product => {
+      const productsWithPriceInfo = productsWithStringIds.map(product => {
         const matchingPrices = (product.precios || []).filter(precio => {
           const precioFecha = new Date(precio.fecha);
           const precioSupermercado = String(precio.supermercado || '').trim().toLowerCase();
@@ -141,7 +166,7 @@ app.get('/api/products/by-category', async (req, res) => {
       return res.json(productsWithPriceInfo);
     }
     
-    res.json(products);
+    res.json(productsWithStringIds);
   } catch (error) {
     console.error('Error buscando por categoría:', error);
     res.status(500).json({ error: 'Error en la búsqueda' });
@@ -163,6 +188,12 @@ app.get('/api/products/by-brand', async (req, res) => {
       marca: marca
     }).limit(100).toArray();
     
+    // Convertir ObjectId a string para JSON
+    const productsWithStringIds = products.map(p => ({
+      ...p,
+      _id: p._id.toString()
+    }));
+    
     // Si se proporciona supermercado y fecha, verificar si tienen precio
     if (supermercado && fecha) {
       // Parsear la fecha directamente desde el string YYYY-MM-DD sin conversión de zona horaria
@@ -176,7 +207,7 @@ app.get('/api/products/by-brand', async (req, res) => {
       
       console.log('Verificando precios - Supermercado buscado:', supermercadoBuscado, 'Fecha buscada:', fechaBuscadaStr, 'Fecha recibida:', fecha);
       
-      const productsWithPriceInfo = products.map(product => {
+      const productsWithPriceInfo = productsWithStringIds.map(product => {
         const matchingPrices = (product.precios || []).filter(precio => {
           const precioFecha = new Date(precio.fecha);
           const precioSupermercado = String(precio.supermercado || '').trim().toLowerCase();
@@ -207,7 +238,7 @@ app.get('/api/products/by-brand', async (req, res) => {
       return res.json(productsWithPriceInfo);
     }
     
-    res.json(products);
+    res.json(productsWithStringIds);
   } catch (error) {
     console.error('Error buscando por marca:', error);
     res.status(500).json({ error: 'Error en la búsqueda' });
@@ -218,6 +249,9 @@ app.get('/api/products/by-brand', async (req, res) => {
 app.get('/api/metadata/categories', async (req, res) => {
   try {
     const database = await getDb();
+    if (!database) {
+      throw new Error('Database connection is not available');
+    }
     const productosCollection = database.collection(COLLECTION_NAME);
     const metadataCollection = database.collection('metadata');
     

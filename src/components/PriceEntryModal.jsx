@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
-import { Save, DollarSign, X, Package, History, ArrowLeft } from 'lucide-react';
+import { Save, DollarSign, X, Package, History, ArrowLeft, Calendar } from 'lucide-react';
 import { getSettings } from '../utils/storage';
-import { productOperationsAPI } from '../utils/api';
+import { productOperationsAPI, productsAPI } from '../utils/api';
 
 const PriceEntryModal = ({ product, onSave, onClose }) => {
   const [view, setView] = useState('form'); // 'form' o 'history'
+  const [showOnlyToday, setShowOnlyToday] = useState(false);
   const [price, setPrice] = useState('');
   const [modalidad, setModalidad] = useState('Neto');
   const [cantidadMinima, setCantidadMinima] = useState('');
@@ -12,6 +13,7 @@ const PriceEntryModal = ({ product, onSave, onClose }) => {
   const [settings, setSettings] = useState(null);
   const [precios, setPrecios] = useState([]);
   const [loadingPrecios, setLoadingPrecios] = useState(false);
+  const [preciosHoy, setPreciosHoy] = useState([]);
 
   useEffect(() => {
     const savedSettings = getSettings();
@@ -29,25 +31,61 @@ const PriceEntryModal = ({ product, onSave, onClose }) => {
     }
   }, [view, product]);
 
+  // Calcular precios de hoy para el supermercado actual
+  useEffect(() => {
+    if (!settings || !settings.supermercado || !settings.fecha || !precios.length) {
+      setPreciosHoy([]);
+      return;
+    }
+
+    // Parsear la fecha de settings
+    let fechaBuscadaStr = settings.fecha;
+    if (fechaBuscadaStr.includes('T')) {
+      fechaBuscadaStr = fechaBuscadaStr.split('T')[0];
+    }
+    const supermercadoBuscado = String(settings.supermercado).trim().toLowerCase();
+
+    // Buscar precios que coincidan con el supermercado y fecha de hoy
+    const preciosDelDia = precios.filter(precio => {
+      const precioFecha = new Date(precio.fecha);
+      const precioSupermercado = String(precio.supermercado || '').trim().toLowerCase();
+      const precioFechaStr = precioFecha.toISOString().split('T')[0];
+      
+      return precioSupermercado === supermercadoBuscado && precioFechaStr === fechaBuscadaStr;
+    });
+
+    setPreciosHoy(preciosDelDia);
+  }, [settings, precios]);
+
   const loadPrecios = async () => {
     if (!product) return;
     
     try {
       setLoadingPrecios(true);
-      // Usar los precios del producto si están disponibles, o hacer fetch
-      if (product.precios && product.precios.length > 0) {
-        setPrecios(product.precios);
-      } else {
-        // Si no hay precios en el producto, intentar obtenerlos
-        const ean = product.ean || (product.eans && product.eans[0]);
-        if (ean) {
-          // Por ahora usar los precios del producto directamente
-          setPrecios([]);
+      // Recargar el producto desde el servidor para obtener precios actualizados
+      const ean = product.ean || (product.eans && product.eans[0]);
+      if (ean) {
+        const products = await productsAPI.getByEAN(ean);
+        if (products && products.length > 0) {
+          const updatedProduct = products[0];
+          // Actualizar los precios con los datos del servidor
+          if (updatedProduct.precios && Array.isArray(updatedProduct.precios)) {
+            setPrecios(updatedProduct.precios);
+          } else {
+            setPrecios([]);
+          }
+        } else {
+          // Si no se encuentra, usar los precios del producto actual
+          setPrecios(product.precios || []);
         }
+      } else {
+        // Si no hay EAN, usar los precios del producto actual
+        setPrecios(product.precios || []);
       }
     } catch (error) {
       console.error('Error cargando precios:', error);
-      setPrecios([]);
+      // Fallback: usar los precios del producto actual
+      setPrecios(product.precios || []);
     } finally {
       setLoadingPrecios(false);
     }
@@ -55,45 +93,28 @@ const PriceEntryModal = ({ product, onSave, onClose }) => {
 
   const modalidades = ['Bruto', 'Neto', 'Neto en cantidad'];
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    
+  const savePrice = async (closeAfterSave = true) => {
     if (!price || parseFloat(price) <= 0) {
       alert('Ingresa un precio válido');
-      return;
+      return false;
     }
 
     if (modalidad === 'Neto en cantidad' && (!cantidadMinima || parseInt(cantidadMinima) <= 0)) {
       alert('Ingresa una cantidad mínima válida');
-      return;
+      return false;
     }
 
     if (!settings || !settings.supermercado) {
       alert('Por favor configura el supermercado en ajustes primero');
-      return;
+      return false;
     }
 
     try {
       setSaving(true);
       
-      const precioData = {
-        productId: product._id,
-        productIdType: typeof product._id,
-        producto: product.nombre,
-        supermercado: settings.supermercado,
-        precio: parseFloat(price),
-        fecha: settings.fecha,
-        relevador: settings.relevador,
-        modalidad: modalidad,
-        cantidadMinima: modalidad === 'Neto en cantidad' ? parseInt(cantidadMinima) : null
-      };
-      
-      console.log('Guardando precio:', precioData);
-      console.log('Product completo:', product);
-      
       const cantidadMinimaValue = modalidad === 'Neto en cantidad' ? parseInt(cantidadMinima) : null;
       
-      await productOperationsAPI.addPriceToMultiple(
+      const result = await productOperationsAPI.addPriceToMultiple(
         [product._id],
         settings.supermercado,
         parseFloat(price),
@@ -105,14 +126,62 @@ const PriceEntryModal = ({ product, onSave, onClose }) => {
       
       console.log('Precio guardado exitosamente');
       
-      onSave();
-      onClose();
+      // Actualizar la lista de precios con los datos del servidor
+      if (result && result.productos && result.productos.length > 0) {
+        const updatedProduct = result.productos[0];
+        // Convertir ObjectId a string si es necesario
+        if (updatedProduct._id && typeof updatedProduct._id !== 'string') {
+          updatedProduct._id = updatedProduct._id.toString();
+        }
+        // Actualizar los precios con los datos del servidor
+        if (updatedProduct.precios && Array.isArray(updatedProduct.precios)) {
+          setPrecios(updatedProduct.precios);
+        }
+      } else {
+        // Fallback: agregar el nuevo precio a la lista local si no hay respuesta del servidor
+        const nuevoPrecio = {
+          precio: parseFloat(price),
+          supermercado: settings.supermercado,
+          fecha: settings.fecha,
+          relevador: settings.relevador,
+          modalidad: modalidad,
+          cantidadMinima: cantidadMinimaValue,
+          fuente: 'app'
+        };
+        setPrecios([nuevoPrecio, ...precios]);
+      }
+      
+      // Limpiar el formulario
+      setPrice('');
+      setCantidadMinima('');
+      setModalidad('Neto');
+      
+      if (closeAfterSave) {
+        // Solo llamar a onSave y cerrar si realmente queremos cerrar
+        onSave();
+        onClose();
+      }
+      // Si closeAfterSave es false, no llamamos a onSave ni onClose
+      // para mantener el modal abierto
+      
+      return true;
     } catch (error) {
       console.error('Error guardando precio:', error);
       alert('Error al guardar el precio: ' + (error.message || 'Error desconocido'));
+      return false;
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    await savePrice(true);
+  };
+
+  const handleSaveAndContinue = async (e) => {
+    e.preventDefault();
+    await savePrice(false);
   };
 
   if (!product) return null;
@@ -147,7 +216,10 @@ const PriceEntryModal = ({ product, onSave, onClose }) => {
           <div className="flex items-center gap-2">
             {view === 'history' && (
               <button
-                onClick={() => setView('form')}
+                onClick={() => {
+                  setView('form');
+                  setShowOnlyToday(false);
+                }}
                 className="text-gray-600 hover:text-gray-800 flex items-center gap-1 text-sm"
                 title="Volver a cargar precio"
               >
@@ -199,10 +271,28 @@ const PriceEntryModal = ({ product, onSave, onClose }) => {
 
         {/* Botón para cambiar de vista */}
         {view === 'form' && (
-          <div className="mb-4 flex justify-end">
+          <div className="mb-4 flex justify-end gap-2">
+            {preciosHoy.length > 0 && (
+              <button
+                type="button"
+                onClick={() => {
+                  // Filtrar solo los precios de hoy y mostrar en historial
+                  setShowOnlyToday(true);
+                  setView('history');
+                }}
+                className="flex items-center justify-center gap-1 px-3 py-1.5 bg-yellow-100 border border-yellow-300 rounded-lg hover:bg-yellow-200 text-yellow-800 text-sm font-semibold"
+                title={`Ver ${preciosHoy.length} ${preciosHoy.length === 1 ? 'precio de hoy' : 'precios de hoy'}`}
+              >
+                <Calendar size={16} />
+                <span>{preciosHoy.length}</span>
+              </button>
+            )}
             <button
               type="button"
-              onClick={() => setView('history')}
+              onClick={() => {
+                setShowOnlyToday(false);
+                setView('history');
+              }}
               className="flex items-center justify-center gap-1 px-3 py-1.5 border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-700 text-sm"
               title="Ver precios guardados"
             >
@@ -276,19 +366,30 @@ const PriceEntryModal = ({ product, onSave, onClose }) => {
             </div>
           </div>
 
-          <div className="flex gap-2 pt-4">
-            <button
-              type="submit"
-              disabled={saving || !settings || !settings.supermercado}
-              className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 disabled:cursor-not-allowed text-white font-semibold py-2 px-4 rounded-lg flex items-center justify-center gap-2"
-            >
-              <Save size={20} />
-              {saving ? 'Guardando...' : 'Guardar Precio'}
-            </button>
+          <div className="flex flex-col gap-2 pt-4">
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={handleSaveAndContinue}
+                disabled={saving || !settings || !settings.supermercado}
+                className="flex-1 bg-green-600 hover:bg-green-700 disabled:bg-green-400 disabled:cursor-not-allowed text-white font-semibold py-2 px-4 rounded-lg flex items-center justify-center gap-2"
+              >
+                <Save size={20} />
+                {saving ? 'Guardando...' : 'Guardar y Cargar Otro'}
+              </button>
+              <button
+                type="submit"
+                disabled={saving || !settings || !settings.supermercado}
+                className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 disabled:cursor-not-allowed text-white font-semibold py-2 px-4 rounded-lg flex items-center justify-center gap-2"
+              >
+                <Save size={20} />
+                {saving ? 'Guardando...' : 'Guardar Precio'}
+              </button>
+            </div>
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-700 font-semibold"
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-700 font-semibold"
             >
               Cancelar
             </button>
@@ -305,15 +406,20 @@ const PriceEntryModal = ({ product, onSave, onClose }) => {
         {/* Vista de historial de precios */}
         {view === 'history' && (
           <div className="space-y-4">
+            {showOnlyToday && preciosHoy.length > 0 && (
+              <div className="p-2 bg-yellow-50 border border-yellow-200 rounded-lg text-sm text-yellow-800 text-center">
+                Mostrando {preciosHoy.length} {preciosHoy.length === 1 ? 'precio de hoy' : 'precios de hoy'} para {settings?.supermercado}
+              </div>
+            )}
             {loadingPrecios ? (
               <div className="text-center py-8 text-gray-500">Cargando precios...</div>
-            ) : precios.length === 0 ? (
+            ) : (showOnlyToday ? preciosHoy : precios).length === 0 ? (
               <div className="text-center py-8 text-gray-500">
-                <p>No hay precios registrados para este producto</p>
+                <p>{showOnlyToday ? 'No hay precios registrados para hoy' : 'No hay precios registrados para este producto'}</p>
               </div>
             ) : (
               <div className="space-y-2 max-h-[500px] overflow-y-auto">
-                {precios
+                {(showOnlyToday ? preciosHoy : precios)
                   .sort((a, b) => {
                     const fechaA = new Date(a.fecha);
                     const fechaB = new Date(b.fecha);
@@ -364,17 +470,56 @@ const PriceEntryModal = ({ product, onSave, onClose }) => {
                     
                     const fechaCompleta = horaStr ? `${fechaStr}, ${horaStr}` : fechaStr;
                     
+                    // Verificar si este precio es de hoy
+                    const isPrecioHoy = (() => {
+                      if (!settings || !settings.supermercado || !settings.fecha) return false;
+                      
+                      // Parsear la fecha de settings
+                      let fechaBuscadaStr = settings.fecha;
+                      if (fechaBuscadaStr.includes('T')) {
+                        fechaBuscadaStr = fechaBuscadaStr.split('T')[0];
+                      }
+                      const supermercadoBuscado = String(settings.supermercado).trim().toLowerCase();
+                      
+                      // Obtener fecha del precio
+                      let precioFechaStr = '';
+                      if (typeof precio.fecha === 'string') {
+                        if (precio.fecha.includes('T')) {
+                          precioFechaStr = precio.fecha.split('T')[0];
+                        } else {
+                          precioFechaStr = precio.fecha;
+                        }
+                      } else {
+                        const fecha = new Date(precio.fecha);
+                        precioFechaStr = fecha.toISOString().split('T')[0];
+                      }
+                      
+                      const precioSupermercado = String(precio.supermercado || '').trim().toLowerCase();
+                      
+                      return precioSupermercado === supermercadoBuscado && precioFechaStr === fechaBuscadaStr;
+                    })();
+                    
                     return (
                       <div
                         key={index}
-                        className="p-4 border border-gray-200 rounded-lg hover:bg-gray-50"
+                        className={`p-4 border rounded-lg ${
+                          isPrecioHoy 
+                            ? 'bg-yellow-50 border-yellow-300 hover:bg-yellow-100' 
+                            : 'border-gray-200 hover:bg-gray-50'
+                        }`}
                       >
                         <div className="flex justify-between items-start mb-2">
                           <div className="flex-1">
                             <div className="flex items-center gap-2 mb-1">
-                              <span className="font-semibold text-gray-800">
+                              <span className={`font-semibold ${isPrecioHoy ? 'text-yellow-800' : 'text-gray-800'}`}>
                                 ${precio.precio.toFixed(2)}
                               </span>
+                              {isPrecioHoy && (
+                                <span className="text-xs px-2 py-1 bg-yellow-200 text-yellow-800 rounded font-semibold flex items-center gap-1">
+                                  <Calendar size={12} />
+                                  Hoy
+                                </span>
+                              )}
                               {precio.modalidad && (
                                 <span className="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded">
                                   {precio.modalidad}

@@ -20,11 +20,17 @@ async function fetchAPI(endpoint, options = {}) {
     const response = await fetch(url, config);
     if (!response.ok) {
       const error = await response.json().catch(() => ({ error: 'Error desconocido' }));
-      throw new Error(error.error || `HTTP error! status: ${response.status}`);
+      const errorMessage = error.error || `HTTP error! status: ${response.status}`;
+      const errorObj = new Error(errorMessage);
+      errorObj.status = response.status;
+      throw errorObj;
     }
     return await response.json();
   } catch (error) {
-    console.error(`Error en ${endpoint}:`, error);
+    // Solo loguear errores que no sean 404 (producto no encontrado es esperado)
+    if (error.status !== 404 && !error.message.includes('404')) {
+      console.error(`Error en ${endpoint}:`, error);
+    }
     // Si es un error de conexión, dar mensaje más claro
     if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
       throw new Error(`No se pudo conectar con el servidor API en ${API_BASE_URL}. Verifica que el servidor esté corriendo.`);
@@ -42,7 +48,16 @@ export const productsAPI = {
 
   // Buscar producto por EAN
   getByEAN: async (ean) => {
-    return fetchAPI(`/products/ean/${ean}`);
+    try {
+      return await fetchAPI(`/products/ean/${ean}`);
+    } catch (error) {
+      // Si es un 404 (producto no encontrado), retornar array vacío en lugar de lanzar error
+      if (error.message.includes('404') || error.message.includes('no encontrado')) {
+        return [];
+      }
+      // Para otros errores, lanzar el error normalmente
+      throw error;
+    }
   },
 
   // Buscar productos
@@ -122,6 +137,20 @@ export const productOperationsAPI = {
       method: 'POST',
       body,
     });
+  },
+};
+
+// Buscar productos por categoría
+export const searchByCategoryAPI = {
+  byCategory: async (categoria, subcategoria) => {
+    const params = new URLSearchParams();
+    if (categoria) params.append('categoria', categoria);
+    if (subcategoria) params.append('subcategoria', subcategoria);
+    return fetchAPI(`/products/by-category?${params}`);
+  },
+  
+  byBrand: async (marca) => {
+    return fetchAPI(`/products/by-brand?marca=${encodeURIComponent(marca)}`);
   },
 };
 

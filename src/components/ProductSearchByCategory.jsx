@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Search, Package, X, Plus } from 'lucide-react';
-import { productsAPI, metadataAPI } from '../utils/api';
+import { productsAPI, metadataAPI, searchByCategoryAPI } from '../utils/api';
 
 const ProductSearchByCategory = ({ scannedEAN, onSelectProduct, onAddEANToProduct, onCreateNew, onCancel }) => {
   const [metadata, setMetadata] = useState({ categorias: [], categoriaSubcategorias: {}, marcas: [] });
@@ -46,13 +46,13 @@ const ProductSearchByCategory = ({ scannedEAN, onSelectProduct, onAddEANToProduc
   const searchByCategory = async () => {
     try {
       setLoading(true);
-      const params = new URLSearchParams();
-      if (selectedCategoria) params.append('categoria', selectedCategoria);
-      if (selectedSubcategoria) params.append('subcategoria', selectedSubcategoria);
-      
-      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3001/api'}/products/by-category?${params}`);
-      const data = await response.json();
-      setProducts(data);
+      const data = await searchByCategoryAPI.byCategory(selectedCategoria, selectedSubcategoria);
+      // Asegurar que los IDs sean strings
+      const productsWithStringIds = (data || []).map(p => ({
+        ...p,
+        _id: p._id?.toString() || p._id
+      }));
+      setProducts(productsWithStringIds);
     } catch (error) {
       console.error('Error buscando por categoría:', error);
       setProducts([]);
@@ -64,9 +64,13 @@ const ProductSearchByCategory = ({ scannedEAN, onSelectProduct, onAddEANToProduc
   const searchByBrand = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3001/api'}/products/by-brand?marca=${encodeURIComponent(selectedMarca)}`);
-      const data = await response.json();
-      setProducts(data);
+      const data = await searchByCategoryAPI.byBrand(selectedMarca);
+      // Asegurar que los IDs sean strings
+      const productsWithStringIds = (data || []).map(p => ({
+        ...p,
+        _id: p._id?.toString() || p._id
+      }));
+      setProducts(productsWithStringIds);
     } catch (error) {
       console.error('Error buscando por marca:', error);
       setProducts([]);

@@ -51,22 +51,17 @@ function App() {
     try {
       const products = await productsAPI.getByEAN(barcode);
       if (products && products.length > 0) {
-        // Producto encontrado
-        setFoundProducts(products);
-        setShowPriceEntry(true);
+        // Producto encontrado - mostrar modal de precio con el primer producto
+        setSelectedProductForPrice(products[0]);
       } else {
         // Producto no encontrado - mostrar búsqueda por categoría/marca
         setShowProductSearch(true);
       }
     } catch (error) {
-      // Si no existe (404), mostrar búsqueda
-      if (error.message.includes('404') || error.message.includes('no encontrado')) {
-        setShowProductSearch(true);
-      } else {
-        console.error('Error buscando producto:', error);
-        alert('Error al buscar producto. Intenta crear uno nuevo.');
-        setShowProductSearch(true);
-      }
+      // Manejar otros errores (no 404)
+      console.error('Error buscando producto:', error);
+      alert('Error al buscar producto. Intenta crear uno nuevo.');
+      setShowProductSearch(true);
     }
   };
 
@@ -76,8 +71,8 @@ function App() {
 
   const handleProductSelectedFromSearch = (product) => {
     setShowProductSearch(false);
-    setFoundProducts([product]);
-    setShowPriceEntry(true);
+    // Mostrar modal de precio en lugar de PriceEntryMultiple
+    setSelectedProductForPrice(product);
   };
 
   const handleCreateNewProduct = () => {
@@ -87,8 +82,8 @@ function App() {
 
   const handleProductSaved = (product) => {
     setShowProductForm(false);
-    setFoundProducts([product]);
-    setShowPriceEntry(true);
+    // Mostrar modal de precio en lugar de PriceEntryMultiple
+    setSelectedProductForPrice(product);
   };
 
   const handlePriceSaved = () => {
@@ -108,6 +103,12 @@ function App() {
 
   const handlePriceSavedFromModal = () => {
     setSelectedProductForPrice(null);
+    // Limpiar estado del flujo de escaneo
+    setScannedBarcode('');
+    setFoundProducts([]);
+    setShowPriceEntry(false);
+    setShowProductSearch(false);
+    setShowProductForm(false);
     // Trigger refresh en ProductSearch
     setRefreshProductSearch(prev => prev + 1);
   };
@@ -278,7 +279,13 @@ function App() {
         <PriceEntryModal
           product={selectedProductForPrice}
           onSave={handlePriceSavedFromModal}
-          onClose={() => setSelectedProductForPrice(null)}
+          onClose={() => {
+            setSelectedProductForPrice(null);
+            // Limpiar estado del flujo de escaneo al cerrar
+            setScannedBarcode('');
+            setFoundProducts([]);
+            setShowPriceEntry(false);
+          }}
         />
       )}
     </div>
