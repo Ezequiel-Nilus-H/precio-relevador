@@ -352,13 +352,13 @@ const ProductSearch = ({ onSelectProduct, onPriceSaved }) => {
                     
                     let colorClassTotal = 'text-gray-400';
                     let bgClassTotal = '';
-                    if (porcentajeTotal === 100) {
+                    if (porcentajeTotal >= 85) {
                       colorClassTotal = 'text-green-600';
                       bgClassTotal = 'bg-green-50';
                     } else if (porcentajeTotal >= 50) {
                       colorClassTotal = 'text-yellow-600';
                       bgClassTotal = 'bg-yellow-50';
-                    } else if (porcentajeTotal > 0) {
+                    } else if (porcentajeTotal >= 35) {
                       colorClassTotal = 'text-orange-600';
                       bgClassTotal = 'bg-orange-50';
                     }
@@ -369,16 +369,16 @@ const ProductSearch = ({ onSelectProduct, onPriceSaved }) => {
                           setSelectedSubcategoria('');
                           // La búsqueda se ejecutará automáticamente por el useEffect
                         }}
-                        className={`p-3 bg-white border-2 rounded-lg hover:border-blue-500 hover:bg-blue-50 transition-all cursor-pointer text-left ${
+                        className={`p-3 border-2 rounded-lg hover:border-blue-500 hover:bg-blue-50 transition-all cursor-pointer text-left ${
                           !selectedSubcategoria
                             ? 'border-blue-500 bg-blue-50'
-                            : 'border-gray-200'
-                        } ${totalProductos > 0 ? bgClassTotal : ''}`}
+                            : `border-gray-200 ${totalProductos > 0 ? bgClassTotal : 'bg-white'}`
+                        }`}
                       >
                         <div className="flex items-center justify-between gap-2">
                           <span className="font-medium text-gray-700 text-sm">Todas</span>
                           {totalProductos > 0 && (
-                            <div className="flex-shrink-0 text-xs font-semibold" style={{ color: porcentajeTotal === 100 ? '#16a34a' : porcentajeTotal >= 50 ? '#ca8a04' : porcentajeTotal > 0 ? '#ea580c' : '#6b7280' }}>
+                            <div className="flex-shrink-0 text-xs font-semibold" style={{ color: porcentajeTotal >= 85 ? '#16a34a' : porcentajeTotal >= 50 ? '#ca8a04' : porcentajeTotal >= 35 ? '#ea580c' : '#6b7280' }}>
                               {porcentajeTotal}%
                             </div>
                           )}
@@ -414,13 +414,13 @@ const ProductSearch = ({ onSelectProduct, onPriceSaved }) => {
                       // Determinar color según el porcentaje
                       let bgClass = '';
                       let porcentajeColor = '#6b7280';
-                      if (porcentaje === 100) {
+                      if (porcentaje >= 85) {
                         bgClass = 'bg-green-50';
                         porcentajeColor = '#16a34a';
                       } else if (porcentaje >= 50) {
                         bgClass = 'bg-yellow-50';
                         porcentajeColor = '#ca8a04';
-                      } else if (porcentaje > 0) {
+                      } else if (porcentaje >= 35) {
                         bgClass = 'bg-orange-50';
                         porcentajeColor = '#ea580c';
                       }
@@ -429,11 +429,11 @@ const ProductSearch = ({ onSelectProduct, onPriceSaved }) => {
                         <button
                           key={sub}
                           onClick={() => setSelectedSubcategoria(sub)}
-                          className={`p-3 bg-white border-2 rounded-lg hover:border-blue-500 hover:bg-blue-50 transition-all cursor-pointer text-left ${
+                          className={`p-3 border-2 rounded-lg hover:border-blue-500 hover:bg-blue-50 transition-all cursor-pointer text-left ${
                             selectedSubcategoria === sub
                               ? 'border-blue-500 bg-blue-50'
-                              : 'border-gray-200'
-                          } ${total > 0 ? bgClass : ''}`}
+                              : `border-gray-200 ${total > 0 ? bgClass : 'bg-white'}`
+                          }`}
                         >
                           <div className="font-medium text-gray-700 text-sm truncate mb-1">
                             {nombreSubcategoria}
