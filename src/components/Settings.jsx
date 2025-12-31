@@ -3,7 +3,7 @@ import { Settings as SettingsIcon, Save, X, Plus } from 'lucide-react';
 import { getSettings, saveSettings } from '../utils/storage';
 import { supermarketsAPI } from '../utils/api';
 
-const Settings = ({ onClose, onSave }) => {
+const Settings = ({ onClose, onSave, required = false }) => {
   const [fecha, setFecha] = useState('');
   const [supermercado, setSupermercado] = useState('');
   const [relevador, setRelevador] = useState('');
@@ -110,7 +110,7 @@ const Settings = ({ onClose, onSave }) => {
           <SettingsIcon size={24} />
           Ajustes
         </h2>
-        {onClose && (
+        {onClose && !required && (
           <button
             onClick={onClose}
             className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
@@ -119,6 +119,14 @@ const Settings = ({ onClose, onSave }) => {
           </button>
         )}
       </div>
+
+      {required && (
+        <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+          <p className="text-sm text-yellow-800">
+            <strong>Configuración requerida:</strong> Por favor completa los ajustes antes de continuar.
+          </p>
+        </div>
+      )}
 
       <form onSubmit={handleSubmit} className="space-y-6">
         <div>
@@ -228,7 +236,7 @@ const Settings = ({ onClose, onSave }) => {
             <Save size={20} />
             Guardar Ajustes
           </button>
-          {onClose && (
+          {onClose && !required && (
             <button
               type="button"
               onClick={onClose}

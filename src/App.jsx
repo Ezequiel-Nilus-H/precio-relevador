@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Camera, Search, Settings } from 'lucide-react';
 import BarcodeScanner from './components/BarcodeScanner';
 import ProductSearch from './components/ProductSearch';
@@ -22,6 +22,18 @@ function App() {
   const [view, setView] = useState('search'); // 'search', 'scan'
   const [showSettings, setShowSettings] = useState(false);
   const [selectedProductForPrice, setSelectedProductForPrice] = useState(null);
+  const [settingsRequired, setSettingsRequired] = useState(false);
+
+  // Verificar configuraciones al cargar la app
+  useEffect(() => {
+    const settings = getSettings();
+    const hasRequiredSettings = settings.fecha && settings.supermercado;
+    
+    if (!hasRequiredSettings) {
+      setSettingsRequired(true);
+      setShowSettings(true);
+    }
+  }, []);
 
   const handleSupermarketSelected = (supermarket) => {
     setSelectedSupermarket(supermarket);
@@ -240,6 +252,10 @@ function App() {
         <div 
           className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
           onClick={(e) => {
+            // No permitir cerrar si las configuraciones son requeridas
+            if (settingsRequired) {
+              return;
+            }
             // Cerrar si se hace clic fuera del contenido
             if (e.target === e.currentTarget) {
               setShowSettings(false);
@@ -248,12 +264,22 @@ function App() {
         >
           <div onClick={(e) => e.stopPropagation()}>
             <SettingsComponent
-              onClose={() => setShowSettings(false)}
+              required={settingsRequired}
+              onClose={() => {
+                // No permitir cerrar si las configuraciones son requeridas
+                if (!settingsRequired) {
+                  setShowSettings(false);
+                }
+              }}
               onSave={(settings) => {
-                setShowSettings(false);
-                // Si hay un supermercado configurado en ajustes, usarlo
-                if (settings.supermercado && !selectedSupermarket) {
-                  setSelectedSupermarket(settings.supermercado);
+                // Verificar que las configuraciones requeridas estén completas
+                if (settings.fecha && settings.supermercado) {
+                  setSettingsRequired(false);
+                  setShowSettings(false);
+                  // Si hay un supermercado configurado en ajustes, usarlo
+                  if (settings.supermercado && !selectedSupermarket) {
+                    setSelectedSupermarket(settings.supermercado);
+                  }
                 }
               }}
             />
