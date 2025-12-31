@@ -3,7 +3,7 @@ import { Save, DollarSign, X, Package, History, ArrowLeft, Calendar } from 'luci
 import { getSettings } from '../utils/storage';
 import { productOperationsAPI, productsAPI } from '../utils/api';
 
-const PriceEntryModal = ({ product, onSave, onClose }) => {
+const PriceEntryModal = ({ product, onSave, onClose, onPriceSaved }) => {
   const [view, setView] = useState('form'); // 'form' o 'history'
   const [showOnlyToday, setShowOnlyToday] = useState(false);
   const [price, setPrice] = useState('');
@@ -151,12 +151,19 @@ const PriceEntryModal = ({ product, onSave, onClose }) => {
       setModalidad('Neto');
       
       if (closeAfterSave) {
-        // Solo llamar a onSave y cerrar si realmente queremos cerrar
-        onSave();
+        // Si queremos cerrar el modal, actualizar la lista y cerrar
+        if (onPriceSaved) {
+          onPriceSaved();
+        }
+        if (onSave) {
+          onSave();
+        }
+        // Pequeño delay para asegurar que la actualización se procese
+        await new Promise(resolve => setTimeout(resolve, 100));
         onClose();
       }
-      // Si closeAfterSave es false, no llamamos a onSave ni onClose
-      // para mantener el modal abierto
+      // Si closeAfterSave es false (Guardar y Cargar Otro), mantenemos el modal abierto
+      // y NO actualizamos la lista todavía
       
       return true;
     } catch (error) {

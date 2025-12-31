@@ -114,6 +114,7 @@ function App() {
   };
 
   const handlePriceSavedFromModal = () => {
+    // Cerrar el modal y limpiar estado
     setSelectedProductForPrice(null);
     // Limpiar estado del flujo de escaneo
     setScannedBarcode('');
@@ -121,7 +122,10 @@ function App() {
     setShowPriceEntry(false);
     setShowProductSearch(false);
     setShowProductForm(false);
-    // Trigger refresh en ProductSearch
+  };
+
+  const handlePriceSavedInModal = () => {
+    // Solo refrescar la lista sin cerrar el modal
     setRefreshProductSearch(prev => prev + 1);
   };
 
@@ -305,7 +309,11 @@ function App() {
         <PriceEntryModal
           product={selectedProductForPrice}
           onSave={handlePriceSavedFromModal}
+          onPriceSaved={handlePriceSavedInModal}
           onClose={() => {
+            // Si se cierra sin guardar, también refrescar la lista por si acaso
+            // (puede que se haya guardado desde "Guardar y Cargar Otro")
+            setRefreshProductSearch(prev => prev + 1);
             setSelectedProductForPrice(null);
             // Limpiar estado del flujo de escaneo al cerrar
             setScannedBarcode('');
